@@ -28,6 +28,7 @@ Ignoring cells' tissue context when predicting perturbations
 </p>
 
 ## ⚙️ Dependencies
+Python - 3.10.12
 torch==2.1.0  
 scanpy==1.10.1  
 sklearn==1.4.0  
