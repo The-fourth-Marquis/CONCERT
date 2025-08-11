@@ -2,6 +2,7 @@
 Advancements in spatial perturbation transcriptomics (SPT) have revolutionized our understanding of cellular behavior in native tissue contexts by integrating spatial and perturbation data. However, existing computational frameworks often fail to capture spatial complexities, focusing primarily on individual cell responses. To overcome this limitation, we propose CONCERT, a spatial-aware model designed to address novel counterfactual prediction (CP) tasks. CONCERT learns perturbation-specific kernels to capture various propagation patterns, enabling predicting response gene expression spatially. Beyond perturbation prediction, CONCERT uniquely enables counterfactual predictions of gene expression by switching one or more cell attributes, providing insights that are beyond the reach of current technologies. Leveraging this capability, we applied CONCERT to two additional datasets, addressing challenges that existing sequencing technologies cannot resolve. Evaluations on Perturb-map lung cancer datasets demonstrated that CONCERT consistently outperformed benchmark models, underscoring its potential to unravel spatially complex cellular mechanisms and drive therapeutic innovation.
 
 ## ⚡ Challenges from existing perturbation models
+Ignoring cells' tissue context when predicting perturbations
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue1.jpg" alt="issue1" width="400"/>
 </p>
