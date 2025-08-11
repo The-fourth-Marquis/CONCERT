@@ -1,12 +1,12 @@
 # CONCERT - A generative model for spatial-aware perturbation prediction
 Advancements in spatial perturbation transcriptomics (SPT) have revolutionized our understanding of cellular behavior in native tissue contexts by integrating spatial and perturbation data. However, existing computational frameworks often fail to capture spatial complexities, focusing primarily on individual cell responses. To overcome this limitation, we propose CONCERT, a spatial-aware model designed to address novel counterfactual prediction (CP) tasks. CONCERT learns perturbation-specific kernels to capture various propagation patterns, enabling predicting response gene expression spatially. Beyond perturbation prediction, CONCERT uniquely enables counterfactual predictions of gene expression by switching one or more cell attributes, providing insights that are beyond the reach of current technologies. Leveraging this capability, we applied CONCERT to two additional datasets, addressing challenges that existing sequencing technologies cannot resolve. Evaluations on Perturb-map lung cancer datasets demonstrated that CONCERT consistently outperformed benchmark models, underscoring its potential to unravel spatially complex cellular mechanisms and drive therapeutic innovation.
 
-## Challenges from existing perturbation models
+## ⚡ Challenges from existing perturbation models
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue1.jpg" alt="issue1" width="400"/>
 </p>
 
-## Challenges from existing spatial perturbation sequencing technologies
+## 🔥 Challenges from existing spatial perturbation sequencing technologies
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue2.jpg" alt="issue2" width="400"/>
 </p>
@@ -15,12 +15,12 @@ Advancements in spatial perturbation transcriptomics (SPT) have revolutionized o
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/concert2.jpg" alt="issue2" width="400"/>
 </p>
 
-## Functions of CONCERT
+## 🛠️ Functions of CONCERT
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/concert.jpg" alt="model" width="400"/>
 </p>
 
-## Dependencies
+## ⚙️ Dependencies
 torch==2.1.0  
 scanpy==1.10.1  
 sklearn==1.4.0  
@@ -28,7 +28,7 @@ scipy==1.12.0
 pandas==2.2.0  
 numpy==1.23.5  
 
-## Run CONCERT
+## 💻 Run CONCERT
 ### Example 1: train CONCERT on a single perturb-map data
 1. Model training  
 <pre> python run_concert_map.py  
@@ -52,9 +52,12 @@ numpy==1.23.5
   
 #### Also see [jupyter notebook](./run_concert_perturbMap.ipynb) showing the detailed steps of running CONCERT.  
 
-#### Reference  
+#### ⚖️ License
+The code in this package is licensed under the MIT License.
 
-#### Questions
+#### 📝 Reference  
+
+#### 💬 Questions
 Please leave a Github issue or contact Xiang Lin at xianglin226@gmail.com
 
 
