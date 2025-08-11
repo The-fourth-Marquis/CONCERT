@@ -16,6 +16,12 @@ Advancements in spatial perturbation transcriptomics (SPT) have revolutionized o
 </p>
 
 ## 🛠️ Functions of CONCERT
+1. Predict perturbations on cells consdiering their niches (2D or 3D).
+2. Predict perturbations across slides.
+3. Impute missing cells with perturbation prediction.
+4. Learn scopes of perturbation effects on tissue space.
+5. Disentangle perturbation effects - intra or inter cells.
+
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/concert.jpg" alt="model" width="400"/>
 </p>
