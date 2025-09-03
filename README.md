@@ -8,16 +8,12 @@ Advancements in spatial perturbation transcriptomics (SPT) have revolutionized o
 ## ⚡ Challenges from existing perturbation models
 Ignoring cells' tissue context when predicting perturbations
 <p align="center">
-  <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue1.jpg" alt="issue1" width="400"/>
+  <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue.jpg" alt="issue" width="400"/>
 </p>
 
 ## 🔥 Challenges from existing spatial perturbation sequencing technologies
 <p align="center">
   <img src="https://github.com/mims-harvard/CONCERT/blob/main/issue2.jpg" alt="issue2" width="400"/>
-</p>
-
-<p align="center">
-  <img src="https://github.com/mims-harvard/CONCERT/blob/main/concert2.jpg" alt="issue2" width="400"/>
 </p>
 
 ## 🛠️ Functions of CONCERT
@@ -28,7 +24,7 @@ Ignoring cells' tissue context when predicting perturbations
 5. Disentangle perturbation effects - intra or inter cells.
 
 <p align="center">
-  <img src="https://github.com/mims-harvard/CONCERT/blob/main/concert.jpg" alt="model" width="400"/>
+  <img src="https://github.com/mims-harvard/CONCERT/blob/main/function.jpg" alt="model" width="400"/>
 </p>
 
 ## ⚙️ Dependencies
