@@ -3,7 +3,7 @@ from time import time
 
 import torch
 from torch import nn
-from spaVAE_batch_stroke import CONCERT
+from concert_batch_3D_stroke import CONCERT
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import KMeans
