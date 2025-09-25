@@ -1,5 +1,8 @@
-CONCERT with a single 3D kernel for stroke data.
-
+CONCERT with a single 2D/3D kernel for stroke data.
+## Randomly perturbing spots or patches on healthy brain with 2D space.  
+See implementations in Notebook3.  
+  
+## Perturb perturbation on healthy brain with 3D space.  
 1. Train model
 <pre> python run_concert_3D_stroke.py  
   --stage train  
