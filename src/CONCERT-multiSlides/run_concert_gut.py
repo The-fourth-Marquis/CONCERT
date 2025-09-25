@@ -82,22 +82,18 @@ if __name__ == "__main__":
     perturbation_ = np.array(data_mat['perturbation']).astype('str') # perturbation information
     perturbation = str_list_to_unique_index(perturbation_) - 1
     day_ = np.array(data_mat['day']).astype('str') # perturbation information
+    mapping = {
+    "D0":  (1., 0),
+    "D12": (12., 1),
+    "D30": (30., 2),
+    "D73": (73., 3),
+    }
     day = []
     batch = []
     for i in day_:
-        if i == "D0":
-            day.append(1.)
-            batch.append(0)
-        elif i == "D12":
-            day.append(12.)
-            batch.append(1)
-        elif i == "D30":
-            day.append(30.)
-            batch.append(2)
-        elif i == "D73":
-            day.append(73.)
-            batch.append(3)
-
+        d, b = mapping[i]
+        day.append(d)
+        batch.append(b)
     day = np.array(day)
     num_classes = len(np.unique(batch))
     batch = np.eye(num_classes)[batch]
