@@ -67,7 +67,7 @@ if __name__ == "__main__":
     parser.add_argument('--final_latent_file', default='final_latent.txt')
     parser.add_argument('--denoised_counts_file', default='denoised_counts.txt')
     parser.add_argument('--num_denoise_samples', default=10000, type=int)
-    parser.add_argument('--allow_batch_kernel_scale', default=True, type=bool)
+    parser.add_argument('--multi_kernel_mode', default=True, type=bool)
     parser.add_argument('--shared_dispersion', default=False, type=bool)
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--pert_cells', default="patch_jak2.txt", type=str)
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     model = CONCERT(cell_atts=cell_atts, num_genes=adata.n_vars, encoder_dim=256, GP_dim=args.GP_dim, Normal_dim=args.Normal_dim, n_batch=n_batch, encoder_layers=args.encoder_layers, decoder_layers=args.decoder_layers,
         noise=args.noise, encoder_dropout=args.dropoutE, decoder_dropout=args.dropoutD, shared_dispersion=args.shared_dispersion,
         fixed_inducing_points=args.fix_inducing_points, initial_inducing_points=initial_inducing_points, 
-        fixed_gp_params=args.fixed_gp_params, kernel_scale=kernel_scale, allow_batch_kernel_scale=args.allow_batch_kernel_scale,
+        fixed_gp_params=args.fixed_gp_params, kernel_scale=kernel_scale, multi_kernel_mode=args.multi_kernel_mode,
         N_train=adata.n_obs, KL_loss=args.KL_loss, dynamicVAE=args.dynamicVAE, init_beta=args.init_beta, min_beta=args.min_beta, max_beta=args.max_beta, 
         mask_cutoff=cutoff, dtype=torch.float32, device=args.device)
 
