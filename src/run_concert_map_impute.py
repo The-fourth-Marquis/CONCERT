@@ -150,7 +150,7 @@ if __name__ == "__main__":
                       normalize_input=True,
                       logtrans_input=True)
 
-    model = SPAVAE(cell_atts=cell_atts, num_genes=adata.n_vars, input_dim=768, GP_dim=args.GP_dim, Normal_dim=args.Normal_dim, encoder_layers=args.encoder_layers, decoder_layers=args.decoder_layers,
+    model = CONCERT(cell_atts=cell_atts, num_genes=adata.n_vars, input_dim=768, GP_dim=args.GP_dim, Normal_dim=args.Normal_dim, encoder_layers=args.encoder_layers, decoder_layers=args.decoder_layers,
         noise=args.noise, encoder_dropout=args.dropoutE, decoder_dropout=args.dropoutD,
         fixed_inducing_points=args.fix_inducing_points, initial_inducing_points=initial_inducing_points, 
         fixed_gp_params=args.fixed_gp_params, kernel_scale=args.kernel_scale, N_train=adata.n_obs, KL_loss=args.KL_loss, dynamicVAE=args.dynamicVAE, 
