@@ -1,188 +1,514 @@
-import math, os
-from time import time
+"""
+Imputation driver for CONCERT — predict expression at new spatial coordinates.
 
-import torch
-from concert_map import CONCERT
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.cluster import KMeans
-from sklearn.neighbors import NearestNeighbors
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+from dataclasses import dataclass, asdict, replace
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Tuple
+
 import h5py
+import numpy as np
 import scanpy as sc
+import torch
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import MinMaxScaler
+
+# Optional YAML
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover
+    yaml = None
+
+from concert_map import CONCERT
 from preprocess import normalize, geneSelection
 
-# torch.manual_seed(42)
+
+# --------------------------------------------------------------------------
+# Logging & small utils
+# --------------------------------------------------------------------------
+def setup_logging(verbosity: int = 1) -> None:
+    level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
+    logging.basicConfig(
+        format="[%(asctime)s] %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S",
+        level=level,
+    )
+
+
+def ensure_dir(path: str | Path) -> Path:
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def auto_batch_size(n: int) -> int:
+    if n <= 1024:
+        return 128
+    if n <= 2048:
+        return 256
+    return 512
+
+
+def strings_to_index(values: np.ndarray) -> np.ndarray:
+    """Deterministically map strings to [0..K-1] integer codes (stable ordering)."""
+    hashed = np.array([sum(ord(c) for c in s) for s in values], dtype=int)
+    uniq = np.unique(hashed)
+    remap = {u: i for i, u in enumerate(uniq)}
+    return np.array([remap[h] for h in hashed], dtype=int)
+
+
+def load_config_file(path: Optional[str]) -> dict:
+    if not path:
+        return {}
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    if p.suffix.lower() == ".json":
+        return json.loads(p.read_text())
+    if p.suffix.lower() in {".yml", ".yaml"}:
+        if yaml is None:
+            raise ImportError("PyYAML is not installed but a YAML config was provided.")
+        return yaml.safe_load(p.read_text()) or {}
+    # fallback attempts
+    try:
+        if yaml is not None:
+            return yaml.safe_load(p.read_text()) or {}
+    except Exception:
+        pass
+    try:
+        return json.loads(p.read_text())
+    except Exception as e:  # pragma: no cover
+        raise ValueError(f"Unsupported config format for {path}: {e}")
+
+
+# --------------------------------------------------------------------------
+# Config
+# --------------------------------------------------------------------------
+@dataclass
+class ImputeConfig:
+    # IO
+    data_file: str = "data.h5"
+    outdir: str = "./outputs"
+    sample: str = "sample"
+    data_index: str = "x"
+
+    # Inducing points
+    grid_inducing_points: bool = True
+    inducing_point_steps: int = 6       # (steps x steps) grid
+    inducing_point_nums: int | None = None  # for k-means
+    inducing_point_file: Optional[str] = None  # reuse saved CSV of (M x 2)
+    loc_range: float = 20.0
+    kernel_scale: float = 20.0  # used only if your SVGP expects a scalar when not multi-kernel
+
+    # Selection / normalization
+    select_genes: int = 0
+
+    # Imputation
+    pert_cells: str = "patch_jak2.txt"  # file with NEW coordinates to impute (tab/space-delimited 2 cols)
+
+    # Targeted imputation (optional)
+    target_cell_tissue: str = "tumor"
+    target_cell_perturbation: str = "Jak2"
+
+    # Model/training minimal knobs (only needed if training happens here)
+    device: str = "cuda"
+    batch_size: str = "auto"
+    maxiter: int = 5000
+    train_size: float = 0.95
+    patience: int = 200
+    lr: float = 1e-3
+    weight_decay: float = 1e-6
+    num_samples: int = 1
+
+    # Architecture to instantiate CONCERT (must match your training)
+    encoder_layers: Iterable[int] = (128, 64)
+    decoder_layers: Iterable[int] = (128,)
+    encoder_dim: int = 256
+    GP_dim: int = 2
+    Normal_dim: int = 8
+    noise: float = 0.1
+    dropoutE: float = 0.1
+    dropoutD: float = 0.0
+    dynamicVAE: bool = True
+    init_beta: float = 10.0
+    min_beta: float = 5.0
+    max_beta: float = 25.0
+    KL_loss: float = 0.025
+
+    # SVGP options (must match your model expectations)
+    fix_inducing_points: bool = True
+    fixed_gp_params: bool = False
+    multi_kernel_mode: bool = True  # if your SVGP_Batch is multi-kernel
+    shared_dispersion: bool = False  # only used if you also decode
+
+    # Weights
+    model_file: Optional[str] = None  # if present and exists, loads; else trains
+
+    # Misc
+    verbosity: int = 1
+    config: Optional[str] = None  # YAML/JSON path
+
+
+# --------------------------------------------------------------------------
+# Data loading
+# --------------------------------------------------------------------------
+def load_h5_dataset(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], np.ndarray]:
+    """
+    Returns
+    -------
+    X : (N, G) float32
+    pos : (N, 2) float32
+    tissue_raw : (N,) str or None (if missing)
+    perturb_raw : (N,) str
+    """
+    with h5py.File(path, "r") as f:
+        X = np.array(f["X"], dtype=np.float32)
+        pos = np.array(f["pos"], dtype=np.float32).T  # to (N, 2)
+        perturb_raw = np.array(f["perturbation"], dtype=str)
+
+        tissue_raw = None
+        if "tissue" in f:
+            tissue_raw = np.array(f["tissue"], dtype=str)
+
+    return X, pos, tissue_raw, perturb_raw
+
+
+def build_attributes(tissue_raw: Optional[np.ndarray], perturb_raw: np.ndarray):
+    """
+    Map tissue & perturb strings to integer codes, plus name dicts.
+    If tissue is missing, infer: {"None"->"normal"; known perturbations -> "tumor"}.
+    """
+    known_perts = ["Jak2", "Tgfbr2", "Ifngr2"]
+    if tissue_raw is None:
+        # infer tissue from perturbations
+        tissue_raw = np.where(np.isin(perturb_raw, known_perts), "tumor", perturb_raw)
+        tissue_raw = np.where(tissue_raw == "None", "normal", tissue_raw)
+
+    tissue_idx = strings_to_index(tissue_raw)
+    # perturb 0 = background; known perts get 1..K in stable order
+    present = [p for p in known_perts if p in set(perturb_raw.tolist())]
+    pert_map = {p: i + 1 for i, p in enumerate(present)}
+    perturb_idx = np.vectorize(lambda s: pert_map.get(s, 0))(perturb_raw).astype(int)
+
+    tissue_dict = {name: int(code) for name, code in zip(tissue_raw, tissue_idx)}
+    return tissue_idx, tissue_dict, perturb_idx, pert_map
+
+
+# --------------------------------------------------------------------------
+# Inducing points
+# --------------------------------------------------------------------------
+def make_inducing_points(
+    pos: np.ndarray,
+    cfg: ImputeConfig,
+) -> np.ndarray:
+    """Create or load inducing points in the original (unbatched) 2D space."""
+    if cfg.inducing_point_file and os.path.isfile(cfg.inducing_point_file):
+        ip = np.loadtxt(cfg.inducing_point_file, delimiter=",")
+        logging.info("Loaded inducing points from %s (shape %s)", cfg.inducing_point_file, ip.shape)
+        return ip.astype(np.float32)
+
+    if cfg.grid_inducing_points:
+        # (steps x steps) grid in [0,1] then scale by loc_range
+        grid_xy = np.mgrid[0:1:complex(cfg.inducing_point_steps),
+                           0:1:complex(cfg.inducing_point_steps)].reshape(2, -1).T
+        ip = (grid_xy * float(cfg.loc_range)).astype(np.float32)
+        logging.info("Created grid inducing points: steps=%d -> %d points", cfg.inducing_point_steps, ip.shape[0])
+        return ip
+
+    # KMeans centroids
+    assert cfg.inducing_point_nums and cfg.inducing_point_nums > 0, \
+        "inducing_point_nums must be set when grid_inducing_points=False"
+    km = KMeans(n_clusters=cfg.inducing_point_nums, n_init=100).fit(pos)
+    ip = km.cluster_centers_.astype(np.float32)
+    logging.info("Created k-means inducing points: k=%d", cfg.inducing_point_nums)
+    return ip
+
+
+# --------------------------------------------------------------------------
+# Orchestration
+# --------------------------------------------------------------------------
+def run(cfg: ImputeConfig) -> None:
+    logging.info("Config: %s", asdict(cfg))
+    ensure_dir(cfg.outdir)
+
+    # Load core data
+    X, pos_raw, tissue_raw, perturb_raw = load_h5_dataset(cfg.data_file)
+
+    # Scale the train locations to [0, loc_range], then scale NEW coords with same transform
+    # NEW coords file (the locations where we want imputed counts)
+    pert_loc_raw = np.loadtxt(cfg.pert_cells, dtype=float)
+    if pert_loc_raw.ndim == 1:
+        pert_loc_raw = pert_loc_raw[None, :]
+    if pert_loc_raw.shape[1] != 2:
+        raise ValueError(f"{cfg.pert_cells} must have 2 columns (x, y).")
+
+    # Single scaler on combined set → split back (keeps relative placement)
+    scaler = MinMaxScaler()
+    pos_all = np.concatenate([pos_raw, pert_loc_raw], axis=0)
+    pos_all = scaler.fit_transform(pos_all) * cfg.loc_range
+    pos = pos_all[: pos_raw.shape[0]].astype(np.float32)
+    pert_loc = pos_all[pos_raw.shape[0] :].astype(np.float32)
+
+    # Attributes
+    tissue_idx, tissue_dict, perturb_idx, pert_map = build_attributes(tissue_raw, perturb_raw)
+    cell_atts = np.c_[tissue_idx, perturb_idx].astype(int)
+    sample_indices = torch.arange(X.shape[0], dtype=torch.int)
+
+    # Name maps for pretty outputs
+    code_to_name = {0: "background"}
+    code_to_name.update({code: name for name, code in pert_map.items()})
+
+    # Batch one-hot from perturbation codes (used by the kernel)
+    n_batch = int(len(np.unique(perturb_idx)))
+    batch = np.eye(n_batch, dtype=np.float32)[perturb_idx]
+
+    # Build inducing points (2D)
+    inducing_points = make_inducing_points(pos, cfg)
+
+    # Prepare AnnData + normalization, optional gene selection
+    if cfg.select_genes and cfg.select_genes > 0:
+        logging.info("Selecting top %d genes...", cfg.select_genes)
+        important = geneSelection(X, n=cfg.select_genes, plot=False)
+        X = X[:, important]
+        np.savetxt(Path(cfg.outdir) / "selected_genes.txt", important, fmt="%d")
+
+    adata = sc.AnnData(X, dtype="float32")
+    adata = normalize(adata, size_factors=True, normalize_input=True, logtrans_input=True)
+
+    # Model (keep consistent with your training-time hyperparams)
+    spatial_dims = 2
+    kernel_scale = (np.full((n_batch, spatial_dims), cfg.kernel_scale, dtype=np.float32)
+                    if cfg.multi_kernel_mode else float(cfg.kernel_scale))
+
+    model = CONCERT(
+        cell_atts=cell_atts,
+        num_genes=adata.n_vars,
+        encoder_dim=cfg.encoder_dim,
+        GP_dim=cfg.GP_dim,
+        Normal_dim=cfg.Normal_dim,
+        n_batch=n_batch,
+        encoder_layers=list(cfg.encoder_layers),
+        decoder_layers=list(cfg.decoder_layers),
+        noise=cfg.noise,
+        encoder_dropout=cfg.dropoutE,
+        decoder_dropout=cfg.dropoutD,
+        shared_dispersion=cfg.shared_dispersion,
+        fixed_inducing_points=cfg.fix_inducing_points,
+        initial_inducing_points=inducing_points,
+        fixed_gp_params=cfg.fixed_gp_params,
+        kernel_scale=kernel_scale,
+        multi_kernel_mode=cfg.multi_kernel_mode,
+        N_train=adata.n_obs,
+        KL_loss=cfg.KL_loss,
+        dynamicVAE=cfg.dynamicVAE,
+        init_beta=cfg.init_beta,
+        min_beta=cfg.min_beta,
+        max_beta=cfg.max_beta,
+        mask_cutoff=np.full(pos.shape[0], 0.5, dtype=np.float32),
+        dtype=torch.float32,
+        device=cfg.device,
+    )
+    logging.info("Model initialized.")
+
+    # Train (if no weights) or load existing
+    if cfg.model_file and os.path.isfile(cfg.model_file):
+        model.load_model(cfg.model_file)
+        logging.info("Loaded weights: %s", cfg.model_file)
+    else:
+        bs = auto_batch_size(X.shape[0]) if cfg.batch_size == "auto" else int(cfg.batch_size)
+        logging.info("Training (batch_size=%s)...", bs)
+        model.train_model(
+            pos=np.concatenate([pos, batch], axis=1).astype(np.float32),  # pos_batched if your kernel expects batch cols
+            ncounts=adata.X,
+            raw_counts=adata.raw.X,
+            size_factors=adata.obs.size_factors,
+            batch=batch,
+            lr=cfg.lr,
+            weight_decay=cfg.weight_decay,
+            batch_size=bs,
+            num_samples=cfg.num_samples,
+            train_size=cfg.train_size,
+            maxiter=cfg.maxiter,
+            patience=cfg.patience,
+            save_model=True,
+            model_weights=str(Path(cfg.outdir) / (cfg.model_file or "model.pt")),
+        )
+        logging.info("Training complete.")
+
+    # ---- Impute at NEW coordinates (baseline) ----
+    bs = auto_batch_size(X.shape[0]) if cfg.batch_size == "auto" else int(cfg.batch_size)
+    logging.info("Imputing counts at %d new coordinates...", pert_loc.shape[0])
+    _, imputed_counts = model.batching_predict_samples(
+        X_test=pert_loc,               # (M, 2) scaled
+        X_train=pos,                   # (N, 2) scaled
+        Y_sample_index=sample_indices,
+        Y_cell_atts=cell_atts,
+        batch_size=bs,
+        n_samples=25,
+    )
+    sc.AnnData(imputed_counts).write(
+        Path(cfg.outdir) / f"{cfg.sample}_{cfg.data_index}_imputed_counts.h5ad"
+    )
+    logging.info("Wrote baseline imputed counts.")
+
+    # ---- Targeted (counterfactual) imputation, if supported by the model ----
+    if hasattr(model, "batching_predict_samples_target"):
+        # build lookup for names → integer codes
+        tissue_code = None
+        if isinstance(cfg.target_cell_tissue, str):
+            # match exact name if present
+            if cfg.target_cell_tissue in tissue_dict:
+                tissue_code = int(tissue_dict[cfg.target_cell_tissue])
+            else:
+                logging.warning("Target tissue '%s' not found; using max code.", cfg.target_cell_tissue)
+                tissue_code = int(np.max(list(tissue_dict.values())))
+        else:
+            tissue_code = int(cfg.target_cell_tissue)
+
+        if cfg.target_cell_perturbation in pert_map:
+            pert_code = int(pert_map[cfg.target_cell_perturbation])
+        else:
+            logging.warning("Target perturbation '%s' not found; using background (0).",
+                            cfg.target_cell_perturbation)
+            pert_code = 0
+
+        logging.info("Imputing counterfactual: tissue=%s, perturbation=%s",
+                     cfg.target_cell_tissue, cfg.target_cell_perturbation)
+        _, imputed_pert_counts = model.batching_predict_samples_target(
+            target=pert_code,
+            tissue=tissue_code,
+            X_test=pert_loc,
+            X_train=pos,
+            Y_sample_index=sample_indices,
+            Y_cell_atts=cell_atts,
+            batch_size=bs,
+            n_samples=25,
+        )
+        sc.AnnData(imputed_pert_counts).write(
+            Path(cfg.outdir) / f"{cfg.sample}_{cfg.data_index}_{cfg.target_cell_perturbation}_imputedPert_counts.h5ad"
+        )
+        logging.info("Wrote targeted imputed counts.")
+    else:
+        logging.info(
+            "Model has no `batching_predict_samples_target`; skipping targeted imputation. "
+            "Add that method to CONCERT to enable targeted impute at new coords."
+        )
+
+
+# --------------------------------------------------------------------------
+# CLI (config-first; CLI only overrides what you pass)
+# --------------------------------------------------------------------------
+def parse_args() -> ImputeConfig:
+    p = argparse.ArgumentParser(
+        description="CONCERT imputation runner",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # Only set types; NO defaults—so config.yaml won't get clobbered
+    p.add_argument("--config", help="YAML/JSON config file path.")
+
+    # IO / basic
+    p.add_argument("--data_file")
+    p.add_argument("--outdir")
+    p.add_argument("--sample")
+    p.add_argument("--data_index")
+
+    # Inducing / scaling
+    def str2bool(v):
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        return v.lower() in ("1", "true", "yes", "y", "on")
+
+    p.add_argument("--grid_inducing_points", type=str2bool)
+    p.add_argument("--inducing_point_steps", type=int)
+    p.add_argument("--inducing_point_nums", type=int)
+    p.add_argument("--inducing_point_file")
+    p.add_argument("--loc_range", type=float)
+    p.add_argument("--kernel_scale", type=float)
+
+    # Selection / impute
+    p.add_argument("--select_genes", type=int)
+    p.add_argument("--pert_cells")
+    p.add_argument("--target_cell_tissue")
+    p.add_argument("--target_cell_perturbation")
+
+    # Train / model (minimal knobs)
+    p.add_argument("--device")
+    p.add_argument("--batch_size")
+    p.add_argument("--maxiter", type=int)
+    p.add_argument("--train_size", type=float)
+    p.add_argument("--patience", type=int)
+    p.add_argument("--lr", type=float)
+    p.add_argument("--weight_decay", type=float)
+    p.add_argument("--num_samples", type=int)
+
+    # Architecture
+    p.add_argument("--encoder_layers", nargs="+", type=int)
+    p.add_argument("--decoder_layers", nargs="+", type=int)
+    p.add_argument("--encoder_dim", type=int)
+    p.add_argument("--GP_dim", type=int)
+    p.add_argument("--Normal_dim", type=int)
+    p.add_argument("--noise", type=float)
+    p.add_argument("--dropoutE", type=float)
+    p.add_argument("--dropoutD", type=float)
+    p.add_argument("--dynamicVAE", type=str2bool)
+    p.add_argument("--init_beta", type=float)
+    p.add_argument("--min_beta", type=float)
+    p.add_argument("--max_beta", type=float)
+    p.add_argument("--KL_loss", type=float)
+    p.add_argument("--fix_inducing_points", type=str2bool)
+    p.add_argument("--fixed_gp_params", type=str2bool)
+    p.add_argument("--multi_kernel_mode", type=str2bool)
+    p.add_argument("--shared_dispersion", type=str2bool)
+
+    p.add_argument("--model_file")
+    p.add_argument("--verbosity", type=int)
+
+    a = p.parse_args()
+
+    # 1) defaults
+    cfg = ImputeConfig()
+
+    # 2) merge config file
+    file_cfg = load_config_file(getattr(a, "config", None)) if getattr(a, "config", None) else {}
+    if file_cfg:
+        # coerce list→tuple for dataclass Iterable fields
+        for k in ("encoder_layers", "decoder_layers"):
+            if k in file_cfg and isinstance(file_cfg[k], list):
+                file_cfg[k] = tuple(file_cfg[k])
+        cfg = replace(cfg, **{k: v for k, v in file_cfg.items() if hasattr(cfg, k)})
+
+    # 3) apply ONLY explicit CLI overrides
+    import sys as _sys
+    specified = set()
+    for action in p._actions:
+        if not action.option_strings:
+            continue
+        if any(opt in _sys.argv for opt in action.option_strings):
+            specified.add(action.dest)
+    cli = {k: getattr(a, k) for k in specified if hasattr(cfg, k) and getattr(a, k) is not None}
+
+    # post-process batch_size if given
+    if "batch_size" in cli:
+        try:
+            cli["batch_size"] = int(cli["batch_size"])
+        except (TypeError, ValueError):
+            pass
+
+    cfg = replace(cfg, **cli)
+    return cfg
+
 
 if __name__ == "__main__":
-
-    # setting the hyper parameters
-    import argparse
-    parser = argparse.ArgumentParser(description='Spatial-aware perturbation prediction',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--data_file', default='data.h5')
-    parser.add_argument('--data_index', default='x')
-    parser.add_argument('--sample', default='x')
-    parser.add_argument('--outdir', default='./outputs/')
-    parser.add_argument('--select_genes', default=0, type=int)
-    parser.add_argument('--batch_size', default="auto")
-    parser.add_argument('--maxiter', default=5000, type=int)
-    parser.add_argument('--train_size', default=0.95, type=float)
-    parser.add_argument('--patience', default=200, type=int)
-    parser.add_argument('--lr', default=1e-3, type=float)
-    parser.add_argument('--weight_decay', default=1e-6, type=float)
-    parser.add_argument('--noise', default=0.1, type=float)
-    parser.add_argument('--dropoutE', default=0.1, type=float,
-                        help='dropout probability for encoder')
-    parser.add_argument('--dropoutD', default=0., type=float,
-                        help='dropout probability for decoder')
-    parser.add_argument('--encoder_layers', nargs="+", default=[128, 64], type=int)
-    parser.add_argument('--GP_dim', default=2, type=int,help='dimension of the latent Gaussian process embedding')
-    parser.add_argument('--Normal_dim', default=8, type=int,help='dimension of the latent standard Gaussian embedding')
-    parser.add_argument('--decoder_layers', nargs="+", default=[128], type=int)
-    parser.add_argument('--dynamicVAE', default=True, type=bool, 
-                        help='whether to use dynamicVAE to tune the value of beta, if setting to false, then beta is fixed to initial value')
-    parser.add_argument('--init_beta', default=10, type=float, help='initial coefficient of the KL loss')
-    parser.add_argument('--min_beta', default=5, type=float, help='minimal coefficient of the KL loss')
-    parser.add_argument('--max_beta', default=25, type=float, help='maximal coefficient of the KL loss')
-    parser.add_argument('--KL_loss', default=0.025, type=float, help='desired KL_divergence value')
-    parser.add_argument('--num_samples', default=1, type=int)
-    parser.add_argument('--fix_inducing_points', default=True, type=bool)
-    parser.add_argument('--grid_inducing_points', default=True, type=bool, 
-                        help='whether to generate grid inducing points or use k-means centroids on locations as inducing points')
-    parser.add_argument('--inducing_point_steps', default=6, type=int)
-    parser.add_argument('--inducing_point_nums', default=None, type=int)
-    parser.add_argument('--inducing_point_file', default="inducing_point.txt",
-                        help="file to save inducing points")
-    parser.add_argument('--fixed_gp_params', default=False, type=bool)
-    parser.add_argument('--loc_range', default=20., type=float)
-    parser.add_argument('--kernel_scale', default=20., type=float)
-    parser.add_argument('--model_file', default=None)
-    parser.add_argument('--final_latent_file', default='final_latent.txt')
-    parser.add_argument('--denoised_counts_file', default='denoised_counts.txt')
-    parser.add_argument('--enhanced_counts_file', default='enhanced_counts.txt')
-    parser.add_argument('--device', default='cuda')
-    parser.add_argument('--pert_cells', default="patch_jak2.txt", type=str)
-    parser.add_argument('--target_cell_tissue', default="tumor", type=str)
-    parser.add_argument('--target_cell_perturbation', default="Jak2", type=str)
-
-
-    args = parser.parse_args()
-    print(args)
-
-    def str_list_to_unique_index(str_list):
-        original_numbers = np.array([sum(ord(char) for char in s) for s in str_list])
-        renumbered = {num: idx + 1 for idx, num in enumerate(sorted(set(original_numbers)))}
-        new_numbers = [renumbered[num] for num in original_numbers]
-        return np.array(new_numbers)
-
-    data_mat = h5py.File(args.data_file, 'r')
-    x = np.array(data_mat['X']).astype('float32') # count matrix
-    loc = np.array(data_mat['pos']).T.astype('float32') # location information
-    scaler = MinMaxScaler()
-    loc = scaler.fit_transform(loc) * args.loc_range
-    tissue_ = np.array(data_mat['tissue']).astype('str') # tissue information
-    tissue = str_list_to_unique_index(tissue_) - 1
-    perturbation_ = np.array(data_mat['perturbation']).astype('str') # perturbation information
-    perturbation = str_list_to_unique_index(perturbation_) - 1
-    cell_atts = np.concatenate((tissue[:, None], perturbation[:, None]), axis=1)
-    sample_indices = torch.tensor(np.arange(x.shape[0]), dtype=torch.int)
-
-    data_mat.close()
-
-    data_index = args.sample + "_" + args.data_index
-
-    tissue_dic = {tissue_[i]: tissue[i] for i in range(len(tissue_))}
-    pert_dic = {perturbation_[i]: perturbation[i] for i in range(len(perturbation_))}
-
-    print(tissue_dic)
-    print(pert_dic)
-
-    if args.batch_size == "auto":
-        if x.shape[0] <= 1024:
-            args.batch_size = 128
-        elif x.shape[0] <= 2048:
-            args.batch_size = 256
-        else:
-            args.batch_size = 512
-    else:
-        args.batch_size = int(args.batch_size)
-
-    print(args)
-
-    if args.select_genes > 0:
-        importantGenes = geneSelection(x, n=args.select_genes, plot=False)
-        x = x[:, importantGenes]
-        np.savetxt("selected_genes.txt", importantGenes, delimiter=",", fmt="%i")
-
-    #coors to impute
-    pert_loc = np.loadtxt(args.pert_cells, dtype=int, delimiter="\t")
-    #print(pert_loc)
-
-    scaler = MinMaxScaler()
-    loc_all = np.concatenate((loc, pert_loc), axis=0)
-    loc_all = scaler.fit_transform(loc_all) * args.loc_range
-    loc = loc_all[:loc.shape[0]]
-    pert_loc = loc_all[loc.shape[0]:]
-    print(x.shape)
-    print(loc.shape)
-    print(pert_loc.shape)
-
-    if not os.path.isfile(args.inducing_point_file):
-        # We provide two ways to generate inducing point, argument "grid_inducing_points" controls whether to choice grid inducing or k-means
-        # One way is grid inducing points, argument "inducing_point_steps" controls number of grid steps, the resulting number of inducing point is (inducing_point_steps+1)^2
-        # Another way is k-means on the locations, argument "inducing_point_nums" controls number of inducing points
-        if args.grid_inducing_points:
-            eps = 1e-5
-            initial_inducing_points = np.mgrid[0:(1+eps):(1./args.inducing_point_steps), 0:(1+eps):(1./args.inducing_point_steps)].reshape(2, -1).T * args.loc_range
-            print(initial_inducing_points.shape)
-        else:
-            loc_kmeans = KMeans(n_clusters=args.inducing_point_nums, n_init=100).fit(loc)
-            np.savetxt(args.outdir + data_index+"_location_centroids.txt", loc_kmeans.cluster_centers_, delimiter=",")
-            np.savetxt(args.outdir + data_index+"_location_kmeans_labels.txt", loc_kmeans.labels_, delimiter=",", fmt="%i")
-            initial_inducing_points = loc_kmeans.cluster_centers_
-    else:
-        initial_inducing_points = np.loadtxt(args.inducing_point_file, delimiter=",")
-
-    adata = sc.AnnData(x, dtype="float32")
-
-    adata = normalize(adata,
-                      size_factors=True,
-                      normalize_input=True,
-                      logtrans_input=True)
-
-    model = CONCERT(cell_atts=cell_atts, num_genes=adata.n_vars, input_dim=768, GP_dim=args.GP_dim, Normal_dim=args.Normal_dim, encoder_layers=args.encoder_layers, decoder_layers=args.decoder_layers,
-        noise=args.noise, encoder_dropout=args.dropoutE, decoder_dropout=args.dropoutD,
-        fixed_inducing_points=args.fix_inducing_points, initial_inducing_points=initial_inducing_points, 
-        fixed_gp_params=args.fixed_gp_params, kernel_scale=args.kernel_scale, N_train=adata.n_obs, KL_loss=args.KL_loss, dynamicVAE=args.dynamicVAE, 
-        init_beta=args.init_beta, min_beta=args.min_beta, max_beta=args.max_beta, dtype=torch.float32, device=args.device)
-
-    print(str(model))
-    
-    if not os.path.isfile(args.model_file):
-        t0 = time()
-        model.train_model(pos=loc, cell_atts=cell_atts, sample_indices=sample_indices, ncounts=adata.X, raw_counts=adata.raw.X, size_factors=adata.obs.size_factors,
-                lr=args.lr, weight_decay=args.weight_decay, batch_size=args.batch_size, num_samples=args.num_samples,
-                train_size=args.train_size, maxiter=args.maxiter, patience=args.patience, save_model=True, model_weights=args.model_file)
-        print('Training time: %d seconds.' % int(time() - t0))
-    else:
-        model.load_model(args.model_file)
-
-    # denoised_counts = model.batching_denoise_counts(X=loc, sample_index=sample_indices, cell_atts=cell_atts, batch_size=args.batch_size, n_samples=25)
-    # to h5ad
-    # adata = sc.AnnData(denoised_counts)
-    # adata.write(f'{args.outdir}/{data_index}_denoised_counts.h5ad')
-
-    # only impute
-    _, imputed_counts = model.batching_predict_samples(X_test=pert_loc, X_train=loc, Y_sample_index=sample_indices, Y_cell_atts=cell_atts, batch_size=args.batch_size, n_samples=25)
-    
-    #save to h5ad
-    adata1 = sc.AnnData(imputed_counts)
-    adata1.write(f'{args.outdir}/{data_index}_imputed_counts.h5ad')
-
-    #impute with counterfactual prediction
-    _, imputed_pert_counts = model.batching_predict_samples_target(target=pert_dic[args.target_cell_perturbation], tissue=tissue_dic[args.target_cell_tissue],
-                                                            X_test=pert_loc, X_train=loc, Y_sample_index=sample_indices, Y_cell_atts=cell_atts, batch_size=args.batch_size, n_samples=25)
-    
-    #save to h5ad
-    adata2 = sc.AnnData(imputed_pert_counts)
-    adata2.write(f'{args.outdir}/{data_index}_{args.target_cell_perturbation}_imputedPert_counts.h5ad')
+    cfg = parse_args()
+    setup_logging(cfg.verbosity)
+    run(cfg)
