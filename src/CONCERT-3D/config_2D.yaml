@@ -1,18 +1,21 @@
-data_file: "datasets/GSM5808054_data.h5"
+data_file: "datasets/mouse_stroke.h5"
 outdir: "./outputs"
 stage: "train"
 batch_size: "auto"
-encoder_layers: [256, 128]
-decoder_layers: [256]
+encoder_layers: [256, 64]
+decoder_layers: [64, 256]
 GP_dim: 2
 Normal_dim: 8
 lr: 0.0002
 maxiter: 3000
 patience: 200
-pert_cells: "./pert_cells/patch_trans.txt"
-target_cell_tissue: "tumor"
-target_cell_perturbation: "Jak2"
-project_index: "trans"
+project_index: "stroke2D"
+pert_cells: "../pert_cells/pert_cells_stroke_sham1_CIA.txt"
+model_file: "model_stroke2d.pt"
+pert_batch: "Sham1"
+target_cell_perturbation: "ICA"
+pert_cell_number: 40
+project_index: "stroke_2D"
 wandb: true
 wandb_project: "concert"
 wandb_run: "test"
