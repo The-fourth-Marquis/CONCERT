@@ -82,8 +82,6 @@ class CONCERT(nn.Module):
     Latent factorization:
       • GP block (GP_dim): spatially structured latent processes via SVGP.
       • Gaussian block (Normal_dim): non-spatial latent effects.
-
-    Decoder reconstructs gene counts (NB likelihood). LORD encoder supplies attribute-aware embeddings.
     """
 
     def __init__(
