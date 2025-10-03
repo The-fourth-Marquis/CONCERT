@@ -118,7 +118,7 @@ class RunConfigGut:
     # IO
     data_file: str = "data.h5"
     outdir: str = "./outputs"
-    data_index: str = "x"  # used in filenames
+    project_index: str = "x"  # used in filenames
 
     # Selection / normalization
     select_genes: int = 0
@@ -440,7 +440,7 @@ def parse_args() -> RunConfigGut:
     # IO / basic
     p.add_argument("--data_file")
     p.add_argument("--outdir")
-    p.add_argument("--data_index")
+    p.add_argument("--project_index")
 
     # Selection / training
     p.add_argument("--select_genes", type=int)
