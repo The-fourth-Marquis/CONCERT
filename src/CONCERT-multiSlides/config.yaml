@@ -9,10 +9,9 @@ Normal_dim: 8
 lr: 0.0002
 maxiter: 3000
 patience: 200
-pert_cells: "./pert_cells/patch_trans.txt"
-target_cell_tissue: "tumor"
-target_cell_perturbation: "Jak2"
-project_index: "trans"
+pert_cells: "D12"
+target_cell_day: 30.
+target_cell_perturbation: "0.0"
 wandb: true
 wandb_project: "concert"
 wandb_run: "test"
