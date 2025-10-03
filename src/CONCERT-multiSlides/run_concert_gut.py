@@ -1,206 +1,529 @@
-import math, os
-from time import time
+#!/usr/bin/env python3
+"""
+CONCERT (Gut) driver — spatial-aware perturbation over developmental "day" batches.
 
-import torch
-from concert_batch_gut import CONCERT
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.cluster import KMeans
+Features
+--------
+- YAML/JSON config file support (CLI flags only override what you pass)
+- Structured logging, deterministic preprocessing
+- Per-batch spatial scaling + batch one-hot appended to coordinates
+- Grid inducing points tiled across batches (with batch one-hot block)
+- Train or evaluate (counterfactual on a target day/perturbation)
+- Saves outputs to .h5ad
+
+Dataset expectations
+--------------------
+HDF5 with keys:
+  X : (G x N) or (N x G) counts (this script expects stored as G x N and transposes)
+  pos : (2 x N) or (N x 2) positions (this script transposes to N x 2 and takes first 2 dims)
+  region : (N,) str (optional, currently unused in cell_atts here)
+  perturbation : (N,) str
+  day : (N,) str with values among {"D0","D12","D30","D73"} (see mapping below)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+from dataclasses import dataclass, asdict, replace
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Tuple
+
 import h5py
-import scanpy as sc
-from preprocess import normalize, geneSelection
+import numpy as np
 import pandas as pd
+import scanpy as sc
+import torch
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import MinMaxScaler
 
-# torch.manual_seed(42)
+# Optional YAML support
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover
+    yaml = None
+
+from concert_batch_gut import CONCERT
+from preprocess import normalize, geneSelection
+
+
+# -----------------------------------------------------------------------------
+# Logging / utils
+# -----------------------------------------------------------------------------
+def setup_logging(verbosity: int = 1) -> None:
+    level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
+    logging.basicConfig(
+        format="[%(asctime)s] %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S",
+        level=level,
+    )
+
+
+def ensure_dir(path: str | Path) -> Path:
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def auto_batch_size(n: int) -> int:
+    if n <= 1024:
+        return 128
+    if n <= 2048:
+        return 256
+    return 512
+
+
+def load_config_file(path: Optional[str]) -> dict:
+    if not path:
+        return {}
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    if p.suffix.lower() == ".json":
+        return json.loads(p.read_text())
+    if p.suffix.lower() in {".yml", ".yaml"}:
+        if yaml is None:
+            raise ImportError("PyYAML is not installed but a YAML config was provided.")
+        return yaml.safe_load(p.read_text()) or {}
+    # fallbacks
+    try:
+        if yaml is not None:
+            return yaml.safe_load(p.read_text()) or {}
+    except Exception:
+        pass
+    try:
+        return json.loads(p.read_text())
+    except Exception as e:  # pragma: no cover
+        raise ValueError(f"Unsupported config format for {path}: {e}")
+
+
+def strings_to_stable_index(values: np.ndarray) -> np.ndarray:
+    """
+    Deterministically map strings to contiguous integer codes (0..K-1),
+    stable across runs without looking at order in the array.
+    """
+    hashed = np.array([sum(ord(c) for c in s) for s in values], dtype=int)
+    uniq = np.unique(hashed)
+    remap = {u: i for i, u in enumerate(uniq)}
+    return np.array([remap[h] for h in hashed], dtype=int)
+
+
+# -----------------------------------------------------------------------------
+# Config
+# -----------------------------------------------------------------------------
+@dataclass
+class RunConfigGut:
+    # IO
+    data_file: str = "data.h5"
+    outdir: str = "./outputs"
+    data_index: str = "x"  # used in filenames
+
+    # Selection / normalization
+    select_genes: int = 0
+
+    # Training
+    batch_size: str = "auto"
+    maxiter: int = 5000
+    train_size: float = 0.95
+    patience: int = 200
+    lr: float = 1e-3
+    weight_decay: float = 1e-6
+
+    # Architecture
+    encoder_layers: Iterable[int] = (128, 64, 32)
+    decoder_layers: Iterable[int] = (64, 128)
+    GP_dim: int = 2
+    Normal_dim: int = 8
+    input_dim: int = 192  # per your original gut model
+
+    # VAE / regularization
+    noise: float = 0.25
+    dropoutE: float = 0.0
+    dropoutD: float = 0.0
+    dynamicVAE: bool = True
+    init_beta: float = 10.0
+    min_beta: float = 5.0
+    max_beta: float = 25.0
+    KL_loss: float = 0.025
+    num_samples: int = 1
+
+    # GP / inducing points (batched by day)
+    fix_inducing_points: bool = True
+    grid_inducing_points: bool = True
+    inducing_point_steps: int = 6
+    inducing_point_nums: int | None = None
+    fixed_gp_params: bool = False
+    loc_range: float = 20.0
+    kernel_scale: float = 20.0
+    allow_batch_kernel_scale: bool = False
+
+    # Dispersion
+    shared_dispersion: bool = True
+
+    # Runtime / persistence
+    model_file: str = "model.pt"
+    device: str = "cuda"
+    verbosity: int = 1
+
+    # Eval / counterfactual
+    stage: str = "train"  # {"train","eval"}
+    pert_cells: str = "D73"             # which day string to select cells for export/subset
+    target_cell_day: float = 13.0       # numeric "day" to impose in counterfactual
+    target_cell_perturbation: str = "0.0"
+
+    # Config file
+    config: Optional[str] = None
+
+
+# -----------------------------------------------------------------------------
+# Data loading
+# -----------------------------------------------------------------------------
+def load_h5_dataset(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Returns
+    -------
+    X : (N, G) float32
+    loc : (N, 2) float32
+    region_str : (N,) str
+    perturb_str : (N,) str
+    day_str : (N,) str
+    """
+    with h5py.File(path, "r") as f:
+        X = np.array(f["X"]).T.astype("float32")        # original stored as (G, N)
+        loc = np.array(f["pos"]).T.astype("float32")    # to (N, 2+), we keep first 2
+        loc = loc[:, :2]
+        region_str = np.array(f["region"]).astype(str)
+        perturb_str = np.array(f["perturbation"]).astype(str)
+        day_str = np.array(f["day"]).astype(str)
+    return X, loc, region_str, perturb_str, day_str
+
+
+def map_days_to_numeric_and_batch(day_str: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
+    """
+    Map day strings to (numeric_day, batch_index) using a fixed, explicit mapping
+    to preserve comparability with the original script.
+
+    Mapping:
+        "D0" -> (1.0, 0)
+        "D12"-> (12.0, 1)
+        "D30"-> (30.0, 2)
+        "D73"-> (73.0, 3)
+    """
+    mapping = {"D0": (1.0, 0), "D12": (12.0, 1), "D30": (30.0, 2), "D73": (73.0, 3)}
+    numeric = []
+    batch_ids = []
+    for d in day_str:
+        if d not in mapping:
+            raise ValueError(f"Unknown day label '{d}'. Supported: {list(mapping)}")
+        num, bi = mapping[d]
+        numeric.append(num)
+        batch_ids.append(bi)
+    day_numeric = np.asarray(numeric, dtype=float)
+    batch_ids = np.asarray(batch_ids, dtype=int)
+    return day_numeric, batch_ids, {k: v for k, (_, v) in mapping.items()}
+
+
+def per_batch_scale_positions(pos: np.ndarray, batch_onehot: np.ndarray, loc_range: float) -> np.ndarray:
+    """
+    Independently min-max scale positions within each batch to [0, loc_range].
+    """
+    n_batch = batch_onehot.shape[1]
+    pos_scaled = np.zeros_like(pos, dtype=np.float32)
+    for i in range(n_batch):
+        mask = batch_onehot[:, i] == 1.0
+        scaler = MinMaxScaler()
+        pos_scaled[mask, :] = scaler.fit_transform(pos[mask, :]) * float(loc_range)
+    return pos_scaled.astype(np.float32)
+
+
+def build_inducing_points_grid_tiled(n_batch: int, steps: int, loc_range: float) -> np.ndarray:
+    """
+    Build a grid (steps x steps) of 2D points in [0, loc_range], then tile it over batches
+    and append an (M_total x n_batch) one-hot block so each batch has its own set of inducing points.
+    """
+    eps = 1e-5
+    grid_xy = np.mgrid[0:(1 + eps):(1.0 / steps), 0:(1 + eps):(1.0 / steps)].reshape(2, -1).T * float(loc_range)
+    grid_xy = grid_xy.astype(np.float32)  # (M, 2)
+    tiled_xy = np.tile(grid_xy, (n_batch, 1))  # (M * n_batch, 2)
+    onehots = []
+    for i in range(n_batch):
+        oh = np.zeros((grid_xy.shape[0], n_batch), dtype=np.float32)
+        oh[:, i] = 1.0
+        onehots.append(oh)
+    onehots = np.concatenate(onehots, axis=0)  # (M * n_batch, n_batch)
+    inducing = np.concatenate([tiled_xy, onehots], axis=1)  # (M * n_batch, 2 + n_batch)
+    return inducing.astype(np.float32)
+
+
+# -----------------------------------------------------------------------------
+# Orchestration
+# -----------------------------------------------------------------------------
+def run(cfg: RunConfigGut) -> None:
+    logging.info("Config: %s", asdict(cfg))
+    outdir = ensure_dir(cfg.outdir)
+
+    # Load data
+    X, loc, region_str, perturb_str, day_str = load_h5_dataset(cfg.data_file)
+
+    # Encode attributes
+    region_idx = strings_to_stable_index(region_str)          # currently unused in cell_atts
+    perturb_idx = strings_to_stable_index(perturb_str)
+    day_numeric, day_batch_idx, day_batch_map = map_days_to_numeric_and_batch(day_str)
+
+    # cell_atts = [perturbation_code, numeric_day]
+    cell_atts = np.c_[perturb_idx, day_numeric].astype(int, copy=False)
+    sample_indices = torch.arange(X.shape[0], dtype=torch.int)
+
+    # Batch one-hot from day batch indices
+    n_classes = int(len(np.unique(day_batch_idx)))
+    batch_onehot = np.eye(n_classes, dtype=np.float32)[day_batch_idx]
+    logging.info("Batches (day groups): %s", {k: int(v) for k, v in day_batch_map.items()})
+
+    # Batch size
+    bs = auto_batch_size(X.shape[0]) if cfg.batch_size == "auto" else int(cfg.batch_size)
+    logging.info("Batch size: %s", bs)
+
+    # Optional gene selection
+    if cfg.select_genes and cfg.select_genes > 0:
+        logging.info("Selecting top %d genes...", cfg.select_genes)
+        important = geneSelection(X, n=cfg.select_genes, plot=False)
+        X = X[:, important]
+        np.savetxt(outdir / "selected_genes.txt", important, fmt="%d")
+
+    # Per-batch scaling of positions to [0, loc_range], then append batch one-hots
+    loc_scaled = per_batch_scale_positions(loc, batch_onehot, cfg.loc_range)
+    loc_batched = np.concatenate([loc_scaled, batch_onehot], axis=1).astype(np.float32)
+    logging.info("Shapes — X: %s, loc_batched: %s", X.shape, loc_batched.shape)
+
+    # Inducing points (grid tiled across batches; k-means path not used in original)
+    if cfg.grid_inducing_points:
+        inducing = build_inducing_points_grid_tiled(n_classes, cfg.inducing_point_steps, cfg.loc_range)
+        logging.info("Inducing points (grid tiled): %s", inducing.shape)
+    else:
+        # Fallback: k-means on positions (without tiling one-hots) — rarely used here
+        assert cfg.inducing_point_nums and cfg.inducing_point_nums > 0, \
+            "inducing_point_nums must be set when grid_inducing_points=False"
+        km = KMeans(n_clusters=cfg.inducing_point_nums, n_init=100).fit(loc_scaled)
+        centers = km.cluster_centers_.astype(np.float32)
+        # append *first* batch one-hot by default (can adapt if desired)
+        oh = np.zeros((centers.shape[0], n_classes), dtype=np.float32)
+        oh[:, 0] = 1.0
+        inducing = np.concatenate([centers, oh], axis=1).astype(np.float32)
+        logging.info("Inducing points (k-means): %s", inducing.shape)
+
+    # AnnData + normalization
+    adata = sc.AnnData(X, dtype="float32")
+    adata = normalize(adata, size_factors=True, normalize_input=True, logtrans_input=True)
+
+    # Model
+    model = CONCERT(
+        cell_atts=cell_atts,
+        num_genes=adata.n_vars,
+        input_dim=cfg.input_dim,
+        GP_dim=cfg.GP_dim,
+        Normal_dim=cfg.Normal_dim,
+        n_batch=n_classes,
+        encoder_layers=list(cfg.encoder_layers),
+        decoder_layers=list(cfg.decoder_layers),
+        noise=cfg.noise,
+        encoder_dropout=cfg.dropoutE,
+        decoder_dropout=cfg.dropoutD,
+        shared_dispersion=cfg.shared_dispersion,
+        fixed_inducing_points=cfg.fix_inducing_points,
+        initial_inducing_points=inducing,
+        fixed_gp_params=cfg.fixed_gp_params,
+        kernel_scale=cfg.kernel_scale,
+        allow_batch_kernel_scale=cfg.allow_batch_kernel_scale,
+        N_train=adata.n_obs,
+        KL_loss=cfg.KL_loss,
+        dynamicVAE=cfg.dynamicVAE,
+        init_beta=cfg.init_beta,
+        min_beta=cfg.min_beta,
+        max_beta=cfg.max_beta,
+        dtype=torch.float32,
+        device=cfg.device,
+    )
+    logging.info("Model initialized.")
+
+    # Train or Evaluate (counterfactual)
+    if cfg.stage.lower() == "train":
+        logging.info("Training...")
+        model.train_model(
+            pos=loc_batched,
+            ncounts=adata.X,
+            raw_counts=adata.raw.X,
+            size_factors=adata.obs.size_factors,
+            batch=batch_onehot,
+            lr=cfg.lr,
+            weight_decay=cfg.weight_decay,
+            batch_size=bs,
+            num_samples=cfg.num_samples,
+            train_size=cfg.train_size,
+            maxiter=cfg.maxiter,
+            patience=cfg.patience,
+            save_model=True,
+            model_weights=str(outdir / cfg.model_file),
+        )
+        logging.info("Training finished.")
+        return
+
+    # ---- EVAL / COUNTERFACTUAL ----
+    model.load_model(str(outdir / cfg.model_file) if os.path.isfile(outdir / cfg.model_file) else cfg.model_file)
+    logging.info("Loaded weights.")
+
+    # Use day string to select the subset of cells we’ll export after counterfactual
+    sel_mask = (day_str == cfg.pert_cells)
+    if not np.any(sel_mask):
+        logging.warning("No cells matched pert_cells '%s'; proceeding without subset.", cfg.pert_cells)
+    pert_ind = np.where(sel_mask)[0]
+
+    # Map perturbation name → code for target perturbation
+    pert_map = {perturb_str[i]: int(perturb_idx[i]) for i in range(len(perturb_str))}
+    if cfg.target_cell_perturbation not in pert_map:
+        raise ValueError(f"Unknown target perturbation '{cfg.target_cell_perturbation}'. "
+                         f"Known: {sorted(set(perturb_str.tolist()))}")
+    target_pert_code = int(pert_map[cfg.target_cell_perturbation])
+
+    # Counterfactual: set selected cells to (target_day, target_perturbation)
+    logging.info("Counterfactual → day=%.1f, perturbation=%s (code=%d)",
+                 cfg.target_cell_day, cfg.target_cell_perturbation, target_pert_code)
+
+    perturbed_counts, pert_atts = model.counterfactualPrediction(
+        X=loc_batched,
+        sample_index=sample_indices,
+        cell_atts=cell_atts,
+        batch_size=bs,
+        n_samples=25,
+        perturb_cell_id=pert_ind,
+        target_cell_day=float(cfg.target_cell_day),
+        target_cell_perturbation=target_pert_code,
+    )
+
+    # Keep only the subset cells in the output (consistent with original script)
+    if pert_ind.size > 0:
+        perturbed_counts = perturbed_counts[pert_ind, :]
+        pert_atts = pert_atts[pert_ind, :]
+
+    # Save as h5ad with obs=[perturbation, day]
+    obs_df = pd.DataFrame(pert_atts, columns=["perturbation", "day"])
+    ad_out = sc.AnnData(perturbed_counts, obs=obs_df)
+    out_path = (
+        Path(cfg.outdir)
+        / f"res_gut_{cfg.pert_cells}_D{int(cfg.target_cell_day)}_P{cfg.target_cell_perturbation}_N{cfg.noise}_perturbed_counts.h5ad"
+    )
+    ad_out.write(out_path)
+    logging.info("Wrote counterfactual counts to %s", out_path)
+
+
+# -----------------------------------------------------------------------------
+# CLI (config-first; CLI only overrides what you pass)
+# -----------------------------------------------------------------------------
+
+def str2bool(v):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    return v.lower() in ("1", "true", "yes", "y", "on")
+
+def parse_args() -> RunConfigGut:
+    p = argparse.ArgumentParser(
+        description="CONCERT Gut runner",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # Config path only; no defaults for the rest to avoid clobbering YAML
+    p.add_argument("--config", help="YAML/JSON config file")
+
+    # IO / basic
+    p.add_argument("--data_file")
+    p.add_argument("--outdir")
+    p.add_argument("--data_index")
+
+    # Selection / training
+    p.add_argument("--select_genes", type=int)
+    p.add_argument("--batch_size")
+    p.add_argument("--maxiter", type=int)
+    p.add_argument("--train_size", type=float)
+    p.add_argument("--patience", type=int)
+    p.add_argument("--lr", type=float)
+    p.add_argument("--weight_decay", type=float)
+
+    # Architecture / VAE
+    p.add_argument("--encoder_layers", nargs="+", type=int)
+    p.add_argument("--decoder_layers", nargs="+", type=int)
+    p.add_argument("--GP_dim", type=int)
+    p.add_argument("--Normal_dim", type=int)
+    p.add_argument("--input_dim", type=int)
+    p.add_argument("--noise", type=float)
+    p.add_argument("--dropoutE", type=float)
+    p.add_argument("--dropoutD", type=float)
+    p.add_argument("--dynamicVAE", type=str2bool)
+    p.add_argument("--init_beta", type=float)
+    p.add_argument("--min_beta", type=float)
+    p.add_argument("--max_beta", type=float)
+    p.add_argument("--KL_loss", type=float)
+    p.add_argument("--num_samples", type=int)
+
+    # GP / inducing
+    p.add_argument("--fix_inducing_points", type=str2bool)
+    p.add_argument("--grid_inducing_points", type=str2bool)
+    p.add_argument("--inducing_point_steps", type=int)
+    p.add_argument("--inducing_point_nums", type=int)
+    p.add_argument("--fixed_gp_params", type=str2bool)
+    p.add_argument("--loc_range", type=float)
+    p.add_argument("--kernel_scale", type=float)
+    p.add_argument("--allow_batch_kernel_scale", type=str2bool)
+    p.add_argument("--shared_dispersion", type=str2bool)
+
+    # Runtime / persistence
+    p.add_argument("--model_file")
+    p.add_argument("--device")
+    p.add_argument("--verbosity", type=int)
+    p.add_argument("--stage", choices=["train", "eval"])
+
+    # Counterfactual
+    p.add_argument("--pert_cells")
+    p.add_argument("--target_cell_day", type=float)
+    p.add_argument("--target_cell_perturbation")
+
+    a = p.parse_args()
+
+    # 1) defaults
+    cfg = RunConfigGut()
+
+    # 2) merge config file
+    file_cfg = load_config_file(getattr(a, "config", None)) if getattr(a, "config", None) else {}
+    if file_cfg:
+        for k in ("encoder_layers", "decoder_layers"):
+            if k in file_cfg and isinstance(file_cfg[k], list):
+                file_cfg[k] = tuple(file_cfg[k])
+        cfg = replace(cfg, **{k: v for k, v in file_cfg.items() if hasattr(cfg, k)})
+
+    # 3) apply ONLY explicit CLI overrides (don’t clobber YAML with argparse defaults)
+    import sys as _sys
+    specified = set()
+    for action in p._actions:
+        if not action.option_strings:
+            continue
+        if any(opt in _sys.argv for opt in action.option_strings):
+            specified.add(action.dest)
+    cli = {k: getattr(a, k) for k in specified if hasattr(cfg, k) and getattr(a, k) is not None}
+
+    # post-process batch_size if given
+    if "batch_size" in cli:
+        try:
+            cli["batch_size"] = int(cli["batch_size"])
+        except (TypeError, ValueError):
+            pass
+
+    cfg = replace(cfg, **cli)
+    return cfg
+
 
 if __name__ == "__main__":
-
-    # setting the hyper parameters
-    import argparse
-    parser = argparse.ArgumentParser(description='Spatial-aware perturbation prediction',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--data_file', default='data.h5')
-    parser.add_argument('--data_index', default='x')
-    parser.add_argument('--outdir', default='./outputs/')
-    parser.add_argument('--select_genes', default=0, type=int)
-    parser.add_argument('--batch_size', default="auto")
-    parser.add_argument('--maxiter', default=5000, type=int)
-    parser.add_argument('--train_size', default=0.95, type=float)
-    parser.add_argument('--patience', default=200, type=int)
-    parser.add_argument('--lr', default=1e-3, type=float)
-    parser.add_argument('--weight_decay', default=1e-6, type=float)
-    parser.add_argument('--noise', default=0.25, type=float)
-    parser.add_argument('--dropoutE', default=0., type=float,
-                        help='dropout probability for encoder')
-    parser.add_argument('--dropoutD', default=0., type=float,
-                        help='dropout probability for decoder')
-    parser.add_argument('--encoder_layers', nargs="+", default=[128, 64, 32], type=int)
-    parser.add_argument('--GP_dim', default=2, type=int,help='dimension of the latent Gaussian process embedding')
-    parser.add_argument('--Normal_dim', default=8, type=int,help='dimension of the latent standard Gaussian embedding')
-    parser.add_argument('--decoder_layers', nargs="+", default=[64, 128], type=int)
-    parser.add_argument('--dynamicVAE', default=True, type=bool, 
-                        help='whether to use dynamicVAE to tune the value of beta, if setting to false, then beta is fixed to initial value')
-    parser.add_argument('--init_beta', default=10, type=float, help='initial coefficient of the KL loss')
-    parser.add_argument('--min_beta', default=5, type=float, help='minimal coefficient of the KL loss')
-    parser.add_argument('--max_beta', default=25, type=float, help='maximal coefficient of the KL loss')
-    parser.add_argument('--KL_loss', default=0.025, type=float, help='desired KL_divergence value')
-    parser.add_argument('--num_samples', default=1, type=int)
-    parser.add_argument('--fix_inducing_points', default=True, type=bool)
-    parser.add_argument('--grid_inducing_points', default=True, type=bool, 
-                        help='whether to generate grid inducing points or use k-means centroids on locations as inducing points')
-    parser.add_argument('--inducing_point_steps', default=6, type=int)
-    parser.add_argument('--inducing_point_nums', default=None, type=int)
-    parser.add_argument('--fixed_gp_params', default=False, type=bool)
-    parser.add_argument('--loc_range', default=20., type=float)
-    parser.add_argument('--kernel_scale', default=20., type=float)
-    parser.add_argument('--model_file', default='model.pt')
-    parser.add_argument('--final_latent_file', default='final_latent.txt')
-    parser.add_argument('--denoised_counts_file', default='denoised_counts.txt')
-    parser.add_argument('--num_denoise_samples', default=10000, type=int)
-    parser.add_argument('--device', default='cuda')
-    parser.add_argument('--allow_batch_kernel_scale', default=False, type=bool)
-    parser.add_argument('--shared_dispersion', default=True, type=bool)
-    parser.add_argument('--pert_cells', default="D73", type=str)
-    parser.add_argument('--target_cell_day', default=13, type=float)
-    parser.add_argument('--target_cell_perturbation', default="0.0", type=str)
-    parser.add_argument('--stage', default="train", type=str)
-
-    args = parser.parse_args()
-
-    def str_list_to_unique_index(str_list):
-        original_numbers = np.array([sum(ord(char) for char in s) for s in str_list])
-        renumbered = {num: idx + 1 for idx, num in enumerate(sorted(set(original_numbers)))}
-        new_numbers = [renumbered[num] for num in original_numbers]
-        return np.array(new_numbers)
-
-    data_mat = h5py.File(args.data_file, 'r')
-    x = np.array(data_mat['X']).T.astype('float32') # count matrix
-    loc = np.array(data_mat['pos']).T.astype('float32') # location information
-    loc = loc[:, :2]
-    region_ = np.array(data_mat['region']).astype('str') # tissue information
-    region = str_list_to_unique_index(region_) - 1
-    perturbation_ = np.array(data_mat['perturbation']).astype('str') # perturbation information
-    perturbation = str_list_to_unique_index(perturbation_) - 1
-    day_ = np.array(data_mat['day']).astype('str') # perturbation information
-    mapping = {
-    "D0":  (1., 0),
-    "D12": (12., 1),
-    "D30": (30., 2),
-    "D73": (73., 3),
-    }
-    day = []
-    batch = []
-    for i in day_:
-        d, b = mapping[i]
-        day.append(d)
-        batch.append(b)
-    day = np.array(day)
-    num_classes = len(np.unique(batch))
-    batch = np.eye(num_classes)[batch]
-    print(batch.shape)
-
-    #cell_atts = np.concatenate((region[:, None], perturbation[:, None], day[:, None]), axis=1)
-    cell_atts = np.concatenate((perturbation[:, None], day[:, None]), axis=1)
-    sample_indices = torch.tensor(np.arange(x.shape[0]), dtype=torch.int)
-
-    data_mat.close()
-
-    print(np.unique(day_, return_counts=True))
-    print(np.unique(perturbation_, return_counts=True))
-
-    pert_dic = {perturbation_[i]: perturbation[i] for i in range(len(perturbation_))}
-    day_dic = {day_[i]: day[i] for i in range(len(day_))}
-    print(day_dic)
-
-    if args.batch_size == "auto":
-        if x.shape[0] <= 1024:
-            args.batch_size = 128
-        elif x.shape[0] <= 2048:
-            args.batch_size = 256
-        else:
-            args.batch_size = 512
-    else:
-        args.batch_size = int(args.batch_size)
-
-    print(args)
-
-    if args.select_genes > 0:
-        importantGenes = geneSelection(x, n=args.select_genes, plot=False)
-        x = x[:, importantGenes]
-        np.savetxt("selected_genes.txt", importantGenes, delimiter=",", fmt="%i")
-
-    n_batch = batch.shape[1]
-    # scale locations per batch
-    loc_scaled = np.zeros(loc.shape, dtype=np.float64)
-    for i in range(n_batch):
-        scaler = MinMaxScaler()
-        b_loc = loc[batch[:,i]==1., :]
-        b_loc = scaler.fit_transform(b_loc) * args.loc_range
-        loc_scaled[batch[:,i]==1., :] = b_loc
-    loc = loc_scaled
-
-    loc = np.concatenate((loc, batch), axis=1)
-
-    print(x.shape)
-    print(loc.shape)
-
-# build inducing point matrix with batch index
-    eps = 1e-5
-    initial_inducing_points_0_ = np.mgrid[0:(1+eps):(1./args.inducing_point_steps), 0:(1+eps):(1./args.inducing_point_steps)].reshape(2, -1).T * args.loc_range
-    initial_inducing_points_0 = np.tile(initial_inducing_points_0_, (n_batch, 1))
-    initial_inducing_points_1 = []
-    for i in range(n_batch):
-        initial_inducing_points_1_ = np.zeros((initial_inducing_points_0_.shape[0], n_batch))
-        initial_inducing_points_1_[:, i] = 1
-        initial_inducing_points_1.append(initial_inducing_points_1_)
-    initial_inducing_points_1 = np.concatenate(initial_inducing_points_1, axis=0)
-    initial_inducing_points = np.concatenate((initial_inducing_points_0, initial_inducing_points_1), axis=1)
-    print(initial_inducing_points.shape)
-
-    adata = sc.AnnData(x, dtype="float32")
-
-    adata = normalize(adata,
-                      size_factors=True,
-                      normalize_input=True,
-                      logtrans_input=True)
-
-    model = CONCERT(cell_atts=cell_atts, num_genes=adata.n_vars, input_dim=192, GP_dim=args.GP_dim, Normal_dim=args.Normal_dim, n_batch=n_batch, encoder_layers=args.encoder_layers, decoder_layers=args.decoder_layers,
-        noise=args.noise, encoder_dropout=args.dropoutE, decoder_dropout=args.dropoutD, shared_dispersion=args.shared_dispersion,
-        fixed_inducing_points=args.fix_inducing_points, initial_inducing_points=initial_inducing_points, 
-        fixed_gp_params=args.fixed_gp_params, kernel_scale=args.kernel_scale, allow_batch_kernel_scale=args.allow_batch_kernel_scale,
-        N_train=adata.n_obs, KL_loss=args.KL_loss, dynamicVAE=args.dynamicVAE, init_beta=args.init_beta, min_beta=args.min_beta, max_beta=args.max_beta, 
-        dtype=torch.float32, device=args.device)
-
-    print(str(model))
-
-    if args.stage == 'train':
-        t0 = time()
-        model.train_model(pos=loc, ncounts=adata.X, raw_counts=adata.raw.X, size_factors=adata.obs.size_factors, batch=batch,
-                lr=args.lr, weight_decay=args.weight_decay, batch_size=args.batch_size, num_samples=args.num_samples,
-                train_size=args.train_size, maxiter=args.maxiter, patience=args.patience, save_model=True, model_weights=args.model_file)
-        print('Training time: %d seconds.' % int(time() - t0))
-    else:
-        model.load_model(args.model_file)
-        pert_ind = np.where(day_ == args.pert_cells)[0]
-
-        final_latent = model.batching_latent_samples(X=loc, sample_index=sample_indices, cell_atts=cell_atts, batch_size=args.batch_size)
-        #np.savetxt(args.outdir + data_index+ '_final_latent.txt', final_latent, delimiter=",")
-
-        # denoised_counts = model.batching_denoise_counts(X=loc, sample_index=sample_indices, cell_atts=cell_atts, batch_size=args.batch_size, n_samples=25)
-        #save as h5ad
-        #adata = sc.AnnData(denoised_counts, obs=adata.obs)
-        #adata.write(args.outdir + "res_gut_" + args.pert_cells + "_N" + str(args.noise) + '_denoised_counts.h5ad')
-
-        perturbed_counts, perturbed_atts = model.counterfactualPrediction(X=loc, sample_index=sample_indices, cell_atts=cell_atts, batch_size=args.batch_size, n_samples=25,
-                                                      perturb_cell_id = pert_ind,
-                                                      target_cell_day = args.target_cell_day, 
-                                                      target_cell_perturbation = pert_dic[args.target_cell_perturbation]
-                                                      )
-
-        #save as h5ad
-        perturbed_counts = perturbed_counts[pert_ind, :]
-        perturbed_atts = perturbed_atts[pert_ind, :]
-        perturbed_atts = pd.DataFrame(perturbed_atts, columns=["perturbation", "day"])
-        adata = sc.AnnData(perturbed_counts, obs=perturbed_atts)
-        adata.write(args.outdir + "res_gut_" + args.pert_cells + "_D" + str(args.target_cell_day) + "_P" + args.target_cell_perturbation + "_N" + str(args.noise) + '_perturbed_counts.h5ad')
-
+    cfg = parse_args()
+    setup_logging(cfg.verbosity)
+    run(cfg)
