@@ -9,7 +9,7 @@ Normal_dim: 8
 lr: 0.0002
 maxiter: 3000
 patience: 200
-project_index: "stroke2D"
+project_index: "patch"
 pert_cells: "../pert_cells/pert_cells_stroke_sham1_CIA.txt"
 model_file: "model_stroke2d.pt"
 pert_batch: "Sham1"
@@ -20,3 +20,4 @@ wandb: true
 wandb_project: "concert"
 wandb_run: "test"
 wandb_mode: "online"
+
