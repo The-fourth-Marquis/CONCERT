@@ -38,22 +38,26 @@ numpy==1.23.5
 
 ## 💻 Run CONCERT
 ### Example 1: train CONCERT on a single perturb-map data
-1. Model training  
-<pre> python run_concert_map.py  
-  --stage train  
+1. Model training
+<pre> python run_concert_map.py  \
+  --config config.yaml \
+  --stage train  \
   --dataset GSM5808054_data.h5  
-  --model_file model.pt  
+  --model_file model.pt  \
+  --wandb \
+  --wandb_project concert-map \
+  --wandb_run train
 </pre> 
 
 2. Define the spots for counterfactual prediction. Spots can be easily selected from the Shiny APP in the select_cells.R script in folder [select_cells](./select_cells/).
   
-3. Do perturbation prediction on the specified spots. Here we predict response gene expression of the spots in spots.txt with perturbagen Jak2-KO (knockout gene Jak2). Arguments `--target_cell_tissue` and `--target_cell_perturbation` are the targert cell/spot type and perturbation state for counterfactual prediction. We can do this only if the corresponding labels are provided during training stage for disentanglement.   
-<pre> python run_concert_map.py  
-  --stage infer  
+3. Do perturbation prediction on the specified spots. Here we predict response gene expression of the spots in spots.txt with perturbagen Jak2-KO (knockout gene Jak2). Arguments `--target_cell_tissue` and `--target_cell_perturbation` are the targert cell/spot type and perturbation state for counterfactual prediction.
+<pre> python run_concert_map.py  \
+  --config config.yaml \
+  --stage eval  \
   --model_file model.pt  
-  --spots spots.txt  
-  --dataset GSM5808054_data.h5  
-  --target_cell_tissue tumor  
+  --pert_cells spots.txt  \
+  --target_cell_tissue tumor \  
   --target_cell_perturbation jak2-KO  
 </pre> 
 4. Visualized the intermediate and final outputs - see folder [outputs](./outputs/)
