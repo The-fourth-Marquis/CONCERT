@@ -154,7 +154,7 @@ class RunConfigStroke:
     verbosity: int = 1
 
     # Counterfactual selection & targeting
-    index: str = "patch"                        # {"random","patch"}; matches original behavior
+    project_index: str = "patch"                        # {"random","patch"}; matches original behavior
     pert_cells: str = "./pert_cells/cells.txt"  # used when index == "patch" (1-based indices)
     pert_batch: str = "Sham1"                   # batch name to subset at the end
     target_cell_perturbation: str = "ICA"       # map -> {ICA:1, else:0}
@@ -365,7 +365,7 @@ def run(cfg: RunConfigStroke) -> None:
     logging.info("Loaded weights: %s", model_path)
 
     # Select perturbed cell indices
-    if cfg.index == "random":
+    if cfg.project_index == "random":
         # choose from desired batch + optionally a label filter (as in original CTX); here we keep batch filter only
         pool = np.where(batch_str == cfg.pert_batch)[0]
         if pool.size < cfg.pert_cell_number:
@@ -373,7 +373,7 @@ def run(cfg: RunConfigStroke) -> None:
         pert_ind = np.random.choice(pool, cfg.pert_cell_number, replace=False)
         np.savetxt(outdir / f"stroke_pert_ind_random_{cfg.pert_cell_number}.txt", pert_ind, fmt="%i")
         out_index_tag = f"random_{cfg.pert_cell_number}"
-    elif cfg.index == "patch":
+    elif cfg.project_index == "patch":
         # load 1-based indices from file, realign to selected batch, then sample a compact patch around a center
         base_inds = np.loadtxt(cfg.pert_cells, dtype=int) - 1
         center_ind = int(base_inds[min(100, len(base_inds) - 1)])  # safety
@@ -387,7 +387,7 @@ def run(cfg: RunConfigStroke) -> None:
         np.savetxt(outdir / f"stroke_pert_ind_patch_{cfg.pert_cell_number}.txt", pert_ind, fmt="%i")
         out_index_tag = f"patch_{cfg.pert_cell_number}"
     else:
-        raise ValueError(f"Unknown index mode '{cfg.index}'. Use 'random' or 'patch'.")
+        raise ValueError(f"Unknown index mode '{cfg.project_index}'. Use 'random' or 'patch'.")
 
     # Counterfactual prediction
     logging.info("Counterfactual → perturbation=%s", cfg.target_cell_perturbation)
@@ -418,6 +418,12 @@ def run(cfg: RunConfigStroke) -> None:
 # -----------------------------------------------------------------------------
 # CLI (config-first; CLI only overrides what you pass)
 # -----------------------------------------------------------------------------
+def str2bool(v):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    return v.lower() in ("1", "true", "yes", "y", "on")
 def parse_args() -> RunConfigStroke:
     p = argparse.ArgumentParser(
         description="CONCERT 2D Stroke runner",
@@ -449,14 +455,6 @@ def parse_args() -> RunConfigStroke:
     p.add_argument("--noise", type=float)
     p.add_argument("--dropoutE", type=float)
     p.add_argument("--dropoutD", type=float)
-
-    def str2bool(v):
-        if v is None:
-            return None
-        if isinstance(v, bool):
-            return v
-        return v.lower() in ("1", "true", "yes", "y", "on")
-
     p.add_argument("--dynamicVAE", type=str2bool)
     p.add_argument("--init_beta", type=float)
     p.add_argument("--min_beta", type=float)
@@ -481,7 +479,7 @@ def parse_args() -> RunConfigStroke:
     p.add_argument("--verbosity", type=int)
 
     # counterfactual
-    p.add_argument("--index")
+    p.add_argument("--project_index")
     p.add_argument("--pert_cells")
     p.add_argument("--pert_batch")
     p.add_argument("--target_cell_perturbation")
