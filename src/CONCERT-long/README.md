@@ -1,7 +1,7 @@
 CONCERT applied on gut DSS data with a single kernel for longitudinal study.
 
 1. Train model.
-<pre> 
+```python
 python src/CONCERT-long/run_concert_gut.py  \
    --config src/CONCERT-long/config.yaml \
    --stage train  \
@@ -10,13 +10,12 @@ python src/CONCERT-long/run_concert_gut.py  \
    --wandb \
    --wandb_project concert-colon \
    --wandb_run train
-</pre> 
+```
 
 2. Do perturbation prediction on the specified time points. Here we predict inflammed spots after 30, 50 and 73 days of recovery. The arguments `--pert_cells` and `--target_cell_day` indicate the day of data to perturb and the target day of transcriptomic state.
   
 After 30 days:
-<pre> 
-
+```python
  python src/CONCERT-long/run_concert_gut.py  \
   --config src/CONCERT-long/config.yaml \
   --project_index D12_30_P0 \
@@ -29,10 +28,10 @@ After 30 days:
   --wandb \
   --wandb_project concert-colon \
   --wandb_run train
-</pre> 
+``` 
 
 After 50 days:
-<pre> 
+```python
  python src/CONCERT-long/run_concert_gut.py  \
   --config src/CONCERT-long/config.yaml \
   --project_index D12_50_P0 \
@@ -45,10 +44,10 @@ After 50 days:
   --wandb \
   --wandb_project concert-colon \
   --wandb_run train
-</pre>
+```
 
 After 73 days:
-<pre> 
+```python
  python src/CONCERT-long/run_concert_gut.py  \
   --config src/CONCERT-long/config.yaml \
   --project_index D12_73_P0 \
@@ -61,4 +60,4 @@ After 73 days:
   --wandb \
   --wandb_project concert-colon \
   --wandb_run train
-</pre> 
+```
