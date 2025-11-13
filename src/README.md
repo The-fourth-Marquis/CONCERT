@@ -4,7 +4,7 @@ run_concert_map_impute.py - conduct imputation and imputation + counterfactual p
 Specify the parameters in config.yaml/config_impute.yaml
 ### Example commands:
 1. **train model**:
-<pre>
+```python
 python src/run_concert_map.py \
   --config src/config.yaml \
   --sample GSM5808055 \
@@ -16,10 +16,10 @@ python src/run_concert_map.py \
   --wandb \
   --wandb_project concert-map \
   --wandb_run train
-</pre>
+```
   
 2. **conduct counterfactual prediction**:
-<pre>
+```python
 python src/run_concert_map.py  \
   --config src/config.yaml \
   --sample GSM5808055 \
@@ -31,10 +31,10 @@ python src/run_concert_map.py  \
   --pert_cells select_cells/pert_cells_GSM5808055_patchclose_tumor_Ifngr2.txt \
   --target_cell_tissue tumor \
   --target_cell_perturbation Ifngr2
-   </pre>
+```
  
 3. **conduct imputation + CP**:  
-<pre>
+```python
 python src/run_concert_map_impute.py \
   --config src/config_impute.yaml \
   --sample GSM5808055 \
@@ -45,6 +45,6 @@ python src/run_concert_map_impute.py \
   --pert_cells ./select_cells/GSM5808055_impute_region2.txt \
   --target_cell_tissue tumor \
   --target_cell_perturbation Ifngr2
-  </pre>
+```
 
 
