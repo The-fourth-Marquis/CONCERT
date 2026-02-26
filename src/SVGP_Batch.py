@@ -24,6 +24,29 @@ def _add_diagonal_jitter(matrix: torch.Tensor, jitter: float = 1e-8) -> torch.Te
     return matrix + jitter * eye
 
 
+def _safe_inv(matrix: torch.Tensor, base_jitter: float = 1e-8) -> torch.Tensor:
+    """
+    Invert a positive semi-definite matrix with increasing diagonal jitter until
+    Cholesky succeeds. Avoids LinAlgError when the kernel matrix is singular or ill-conditioned.
+    """
+    jitter = float(base_jitter)
+    eye = torch.eye(matrix.size(-1), device=matrix.device, dtype=matrix.dtype)
+    if matrix.dim() == 3 and eye.dim() == 2:
+        eye = eye.expand(matrix.size(0), -1, -1)
+    for _ in range(12):  # try jitter up to 1e-8 * 10^11 = 1e3
+        try:
+            M = matrix + jitter * eye
+            L = torch.linalg.cholesky(M)
+            # A^{-1} = L^{-T} L^{-1}; cholesky_solve(I, L) gives L^{-T} L^{-1} @ I = A^{-1}
+            A_inv = torch.cholesky_inverse(L)
+            return A_inv
+        except RuntimeError:
+            jitter *= 10.0
+            if jitter > 1e2:
+                raise
+    raise RuntimeError("_safe_inv: could not invert matrix with jitter up to 1e2")
+
+
 class SVGP(nn.Module):
     """
     Sparse Variational Gaussian Process (SVGP) for batched spatial kernels.
@@ -203,17 +226,16 @@ class SVGP(nn.Module):
         m = self.inducing_index_points.shape[0]
 
         K_mm = self.kernel_matrix(self.inducing_index_points, self.inducing_index_points, cutoff=cutoff)
-        K_mm_inv = torch.linalg.inv(_add_diagonal_jitter(K_mm, self.jitter))
+        K_mm_inv = _safe_inv(K_mm, self.jitter)
 
         K_nn = self.kernel_matrix(x, x, x_inducing=False, y_inducing=False, diag_only=True, cutoff=cutoff)
 
         K_nm = self.kernel_matrix(x, self.inducing_index_points, x_inducing=False, cutoff=cutoff)
         K_mn = K_nm.transpose(0, 1)
 
-        # KL(q(u) || p(u))
-        K_mm_chol = torch.linalg.cholesky(_add_diagonal_jitter(K_mm, self.jitter))
+        # KL(q(u) || p(u)); log_det(K_mm) from inverse (avoids singular K_mm cholesky)
+        K_mm_log_det = -2.0 * torch.sum(torch.log(torch.diagonal(torch.linalg.cholesky(K_mm_inv))))
         S_chol = torch.linalg.cholesky(_add_diagonal_jitter(A_hat, self.jitter))
-        K_mm_log_det = 2.0 * torch.sum(torch.log(torch.diagonal(K_mm_chol)))
         S_log_det = 2.0 * torch.sum(torch.log(torch.diagonal(S_chol)))
 
         KL_term = 0.5 * (
@@ -271,7 +293,7 @@ class SVGP(nn.Module):
         b = index_points_train.shape[0]
 
         K_mm = self.kernel_matrix(self.inducing_index_points, self.inducing_index_points, cutoff=cutoff)
-        K_mm_inv = torch.linalg.inv(_add_diagonal_jitter(K_mm, self.jitter))
+        K_mm_inv = _safe_inv(K_mm, self.jitter)
 
         K_xx = self.kernel_matrix(index_points_test, index_points_test, x_inducing=False, y_inducing=False, diag_only=True, cutoff=cutoff)
         K_xm = self.kernel_matrix(index_points_test, self.inducing_index_points, x_inducing=False, cutoff=cutoff)
@@ -282,7 +304,7 @@ class SVGP(nn.Module):
 
         # Sigma_l and its inverse
         sigma_l = K_mm + (self.N_train / b) * torch.matmul(K_mn, K_nm / noise[:, None])
-        sigma_l_inv = torch.linalg.inv(_add_diagonal_jitter(sigma_l, self.jitter))
+        sigma_l_inv = _safe_inv(sigma_l, self.jitter)
 
         # Predictive mean at X_*
         mean_vector = (self.N_train / b) * torch.matmul(
@@ -326,7 +348,7 @@ class SVGP(nn.Module):
         b = index_points_train.shape[0]
 
         K_mm = self.kernel_matrix_impute(self.inducing_index_points, self.inducing_index_points, x_cutoff=None, y_cutoff=None)
-        K_mm_inv = torch.linalg.inv(_add_diagonal_jitter(K_mm, self.jitter))
+        K_mm_inv = _safe_inv(K_mm, self.jitter)
 
         K_xx = self.kernel_matrix_impute(index_points_test, index_points_test, x_inducing=False, y_inducing=False, diag_only=True, x_cutoff=cutoff_test, y_cutoff=cutoff_test)
         K_xm = self.kernel_matrix_impute(index_points_test, self.inducing_index_points, x_inducing=False, x_cutoff=cutoff_test, y_cutoff=None)
@@ -336,7 +358,7 @@ class SVGP(nn.Module):
         K_mn = K_nm.transpose(0, 1)
 
         sigma_l = K_mm + (self.N_train / b) * torch.matmul(K_mn, K_nm / noise[:, None])
-        sigma_l_inv = torch.linalg.inv(_add_diagonal_jitter(sigma_l, self.jitter))
+        sigma_l_inv = _safe_inv(sigma_l, self.jitter)
 
         mean_vector = (self.N_train / b) * torch.matmul(
             K_xm, torch.matmul(sigma_l_inv, torch.matmul(K_mn, y / noise))

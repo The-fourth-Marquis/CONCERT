@@ -113,7 +113,7 @@ class CONCERT(nn.Module):
             fixed_gp_params=fixed_gp_params,
             kernel_scale=kernel_scale,
             multi_kernel_mode=multi_kernel_mode,
-            jitter=1e-8,
+            jitter=1e-5,  # larger jitter for numerical stability (avoids singular K_mm on inversion)
             N_train=N_train,
             dtype=dtype,
             device=device,

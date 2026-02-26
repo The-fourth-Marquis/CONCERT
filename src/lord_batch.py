@@ -9,7 +9,43 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 import torch.nn as nn
-from scvi.nn import FCLayers
+
+
+class FCLayers(nn.Module):
+    """
+    Lightweight replacement for scvi.nn.FCLayers to avoid importing scvi/JAX.
+    """
+
+    def __init__(
+        self,
+        n_in: int,
+        n_out: int,
+        n_layers: int = 2,
+        n_hidden: int = 128,
+        dropout_rate: float = 0.0,
+        bias: bool = True,
+        use_activation: bool = True,
+    ) -> None:
+        super().__init__()
+
+        layers = []
+        in_dim = n_in
+        for i in range(max(1, n_layers)):
+            out_dim = n_out if i == n_layers - 1 else n_hidden
+            block = []
+            block.append(nn.Linear(in_dim, out_dim, bias=bias))
+            if use_activation:
+                block.append(nn.BatchNorm1d(out_dim, eps=1e-3, momentum=0.01))
+                block.append(nn.ReLU())
+                if dropout_rate and dropout_rate > 0.0:
+                    block.append(nn.Dropout(dropout_rate))
+            layers.append(nn.Sequential(*block))
+            in_dim = out_dim
+
+        self.fc_layers = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fc_layers(x)
 
 
 # ---------------------------------------------------------------------
