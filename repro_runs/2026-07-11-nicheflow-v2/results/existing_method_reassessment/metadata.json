@@ -1,0 +1,85 @@
+{
+  "claim_scope": "observed perturbation relocation with held-out target evaluation",
+  "generated_at": "2026-07-11T03:36:22.550949+00:00",
+  "git_commit": "0312979b64ab071fbb65ffcd5144890a067ba81a",
+  "include_expensive": false,
+  "metric_registry": {
+    "boundary_leakage_score": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "spatial_proxy",
+      "version": "v2.0"
+    },
+    "delta_mae": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_r2": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_rmse": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_spearman": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "distance_response_decay_score": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "spatial_proxy",
+      "version": "v2.0"
+    },
+    "fullpool_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "compatibility",
+      "version": "v2.0"
+    },
+    "heldout_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "distribution",
+      "version": "v2.0"
+    },
+    "source_individuality_score": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "structure_proxy",
+      "version": "v2.0"
+    }
+  },
+  "n_tasks_requested": 37,
+  "reference_fractions": [
+    0.25,
+    0.5,
+    0.7
+  ],
+  "split_seeds": [
+    20260711,
+    20260712,
+    20260713,
+    20260714,
+    20260715
+  ],
+  "split_types": [
+    "random_stratified",
+    "spatial_block"
+  ]
+}
