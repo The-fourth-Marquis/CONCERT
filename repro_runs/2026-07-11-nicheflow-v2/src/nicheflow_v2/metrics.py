@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from scipy.stats import spearmanr
 
 
@@ -167,12 +168,75 @@ def distribution_metrics(
     }
 
 
+def _pairwise_upper_distances(values: np.ndarray) -> np.ndarray:
+    values = _as_2d(values, "values")
+    if values.shape[0] < 2:
+        return np.array([], dtype=np.float64)
+    distances = np.sqrt(((values[:, None, :] - values[None, :, :]) ** 2).sum(axis=2))
+    return distances[np.triu_indices(values.shape[0], k=1)]
+
+
+def boundary_leakage_score(
+    prediction: np.ndarray,
+    target_reference: np.ndarray,
+    boundary_labels: np.ndarray,
+) -> float:
+    """Mean absolute deviation from label-stratified target references."""
+    prediction = _as_2d(prediction, "prediction")
+    target_reference = _as_2d(target_reference, "target_reference")
+    labels = np.asarray(boundary_labels).astype(str)
+    if prediction.shape != target_reference.shape or prediction.shape[0] != labels.size:
+        raise ValueError("prediction, target_reference, and labels must align by row")
+    errors: list[float] = []
+    for label in np.unique(labels):
+        mask = labels == label
+        reference = target_reference[mask].mean(axis=0)
+        errors.append(float(np.abs(prediction[mask] - reference).mean()))
+    return float(np.mean(errors)) if errors else float("nan")
+
+
+def source_individuality_score(
+    prediction: np.ndarray,
+    source: np.ndarray,
+) -> tuple[float, str]:
+    """Correlation between predicted and source pairwise-distance structures."""
+    prediction_distances = _pairwise_upper_distances(prediction)
+    source_distances = _pairwise_upper_distances(source)
+    return safe_correlation(prediction_distances, source_distances, method="pearson")
+
+
+def distance_response_decay_score(
+    distances: np.ndarray,
+    response_magnitude: np.ndarray,
+) -> tuple[float, str]:
+    """Positive values indicate response magnitude decreases with distance."""
+    correlation, reason = safe_correlation(distances, response_magnitude, method="pearson")
+    return (-correlation if np.isfinite(correlation) else correlation), reason
+
+
+def cross_niche_drop(
+    rows: pd.DataFrame,
+    *,
+    metric: str = "delta_pcc",
+    in_niche_task: str = "niche_core",
+    cross_niche_task: str = "cross_niche_core_to_border",
+) -> float:
+    in_niche = rows.loc[rows["task_type"] == in_niche_task, metric].dropna()
+    cross_niche = rows.loc[rows["task_type"] == cross_niche_task, metric].dropna()
+    if in_niche.empty or cross_niche.empty:
+        return float("nan")
+    return float(in_niche.mean() - cross_niche.mean())
+
+
 METRIC_REGISTRY: dict[str, dict[str, str]] = {
-    "heldout_edistance": {"version": "v2.0", "direction": "lower", "scope": "distribution"},
-    "fullpool_edistance": {"version": "v2.0", "direction": "lower", "scope": "compatibility"},
-    "delta_mae": {"version": "v2.0", "direction": "lower", "scope": "group_effect"},
-    "delta_rmse": {"version": "v2.0", "direction": "lower", "scope": "group_effect"},
-    "delta_pcc": {"version": "v2.0", "direction": "higher", "scope": "group_effect"},
-    "delta_spearman": {"version": "v2.0", "direction": "higher", "scope": "group_effect"},
-    "delta_r2": {"version": "v2.0", "direction": "higher", "scope": "group_effect"},
+    "heldout_edistance": {"version": "v2.0", "direction": "lower", "scope": "distribution", "causal_proof": "no"},
+    "fullpool_edistance": {"version": "v2.0", "direction": "lower", "scope": "compatibility", "causal_proof": "no"},
+    "delta_mae": {"version": "v2.0", "direction": "lower", "scope": "group_effect", "causal_proof": "no"},
+    "delta_rmse": {"version": "v2.0", "direction": "lower", "scope": "group_effect", "causal_proof": "no"},
+    "delta_pcc": {"version": "v2.0", "direction": "higher", "scope": "group_effect", "causal_proof": "no"},
+    "delta_spearman": {"version": "v2.0", "direction": "higher", "scope": "group_effect", "causal_proof": "no"},
+    "delta_r2": {"version": "v2.0", "direction": "higher", "scope": "group_effect", "causal_proof": "no"},
+    "boundary_leakage_score": {"version": "v2.0", "direction": "lower", "scope": "spatial_proxy", "causal_proof": "no"},
+    "source_individuality_score": {"version": "v2.0", "direction": "higher", "scope": "structure_proxy", "causal_proof": "no"},
+    "distance_response_decay_score": {"version": "v2.0", "direction": "higher", "scope": "spatial_proxy", "causal_proof": "no"},
 }
