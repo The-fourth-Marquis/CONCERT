@@ -1,0 +1,8 @@
+gate_id,criterion,passed,observed,threshold,candidate_method,decision
+G1,heldout_edistance_superiority_with_clustered_ci,False,"{""ci_high"": 6.085880779306265, ""ci_low"": -9.066771822755907, ""mean_delta"": -1.7108128476882223, ""win_rate"": 0.6747747747747748}","win_rate>0.50, mean<0, ci_high<0",fixed_80_20,do_not_advance_to_graph_flow
+G2,delta_metric_noninferiority,True,"{""delta_mae_relative"": -0.09970374556893849, ""delta_pcc_diff"": -0.010182646745627926, ""delta_rmse_relative"": -0.03267540056821528, ""delta_spearman_diff"": 0.006637336464990087}","correlations>=-0.02, relative errors<=0.05",fixed_80_20,do_not_advance_to_graph_flow
+G3,de_direction_noninferiority,True,"{""direction_accuracy_diff"": 0.2674774774774775, ""opposite_direction_diff"": 0.016306306306306306}","direction>=-0.02, opposite<=0.02",fixed_80_20,do_not_advance_to_graph_flow
+G4,boundary_and_individuality_noninferiority,True,"{""boundary_relative"": -0.06003548673137592, ""individuality_diff"": 0.007711136414208107}","boundary_relative<=0.05, individuality>=-0.02",fixed_80_20,do_not_advance_to_graph_flow
+G5,reduced_reference_support,False,"{""mean_delta_fraction_025"": -5.005673389463615, ""mean_delta_fraction_050"": 2.298896069700852, ""tasks_fraction_025"": 37}",fraction_050 mean<0 and feasible fraction_025 mean<0,fixed_80_20,do_not_advance_to_graph_flow
+G6,calibration_free_gain,True,"{""mean_delta"": -1.7108128476882223, ""win_rate"": 0.6747747747747748}",win_rate>=0.50 and mean<0,fixed_80_20,do_not_advance_to_graph_flow
+G7,coverage_and_variability_reported,True,"{""n_seeds"": 5, ""n_split_types"": 2, ""n_tasks"": 37}","37 tasks, >=5 seeds, >=2 split types",fixed_80_20,do_not_advance_to_graph_flow

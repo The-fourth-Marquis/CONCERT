@@ -154,6 +154,7 @@ EXISTING_METHODS: tuple[str, ...] = (
     "cauchy_l1",
     "graph_diffusion_l1",
     "linear_covariate_ridge_l1",
+    "adaptive_anchor_calibrated_l2",
     "legacy_nicheflow_lite_l3",
     "legacy_v1_fixed_80_20_l3",
     "legacy_v1_fixed_80_20_calibrated_l3",
@@ -195,6 +196,15 @@ def predict_existing_method(
     elif method == "linear_covariate_ridge_l1":
         prediction = _linear_covariate_prediction(payload, split)
         access_level = "L1"
+    elif method == "adaptive_anchor_calibrated_l2":
+        anchor_name = _adaptive_anchor_name(payload)
+        prediction = calibrate_to_reference(
+            _anchor_prediction(payload, split, anchor_name),
+            reference_expr,
+        )
+        access_level = "L2"
+        calibration = True
+        components["anchor"] = anchor_name
     elif method == "legacy_nicheflow_lite_l3":
         prediction = _legacy_residual_prediction(payload, split)
         access_level = "L3"

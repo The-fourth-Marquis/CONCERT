@@ -2,6 +2,7 @@
 """Tests for NicheFlow-v2 evidence artifacts and statistical summaries."""
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 import warnings
@@ -75,6 +76,8 @@ def test_required_artifacts_and_ranking_eligibility(tmp_path: Path) -> None:
     assert ranking["eligible_for_primary"].all()
     assert "fixed_ineligible" not in set(ranking["method"])
     assert "held-out" in (tmp_path / "README.md").read_text().lower()
+    written_metadata = json.loads((tmp_path / "metadata.json").read_text())
+    assert isinstance(written_metadata["git_dirty"], bool)
 
 
 def test_clustered_bootstrap_is_deterministic() -> None:

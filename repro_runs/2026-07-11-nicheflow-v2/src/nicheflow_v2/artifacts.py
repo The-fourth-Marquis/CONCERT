@@ -32,6 +32,18 @@ def _git_commit(repo_root: Path) -> str:
         return "unknown"
 
 
+def _git_dirty(repo_root: Path) -> bool:
+    try:
+        output = subprocess.check_output(
+            ["git", "-C", str(repo_root), "status", "--porcelain"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        return bool(output.strip())
+    except (OSError, subprocess.CalledProcessError):
+        return True
+
+
 def _validate_metrics(metrics: pd.DataFrame) -> None:
     missing = REQUIRED_METRIC_COLUMNS - set(metrics.columns)
     if missing:
@@ -91,6 +103,7 @@ def write_artifacts(
         **metadata,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_commit": _git_commit(config.repo_root),
+        "git_dirty": _git_dirty(config.repo_root),
         "metric_registry": METRIC_REGISTRY,
         "reference_fractions": list(config.reference_fractions),
         "split_seeds": list(config.split_seeds),

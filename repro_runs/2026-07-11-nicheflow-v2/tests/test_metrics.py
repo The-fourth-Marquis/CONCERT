@@ -12,9 +12,12 @@ sys.path.insert(0, str(ROOT / "src"))
 from nicheflow_v2.metrics import (
     de_direction_metrics,
     distribution_metrics,
+    niche_stratified_energy_distance,
+    niche_wise_delta_correlation,
     perturbation_effect_metrics,
     safe_correlation,
     select_de_indices,
+    spatial_map_correlation,
 )
 
 
@@ -63,10 +66,52 @@ def test_distribution_metrics_distinguish_heldout_and_fullpool() -> None:
     assert metrics["fullpool_edistance"] > metrics["heldout_edistance"]
 
 
+def test_niche_stratified_energy_distance_respects_strata() -> None:
+    prediction = np.array([[0.0], [0.0], [10.0], [10.0]])
+    target = np.array([[0.0], [0.0], [10.0], [10.0]])
+    niches = np.array([0.0, 0.0, 1.0, 1.0])
+    value, n_strata, reason = niche_stratified_energy_distance(
+        prediction, niches, target, niches
+    )
+    assert value == 0.0
+    assert n_strata == 2
+    assert reason == ""
+
+
+def test_niche_wise_delta_correlation_uses_matched_niches() -> None:
+    source = np.array([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0], [1.0, 1.0]])
+    prediction = source + np.array([[1.0, -1.0]] * 4)
+    target = prediction.copy()
+    niches = np.array([0.0, 0.0, 1.0, 1.0])
+    value, n_strata, reason = niche_wise_delta_correlation(
+        prediction, source, niches, target, niches
+    )
+    assert value == 1.0
+    assert n_strata == 2
+    assert reason == ""
+
+
+def test_spatial_map_correlation_uses_reference_selected_genes() -> None:
+    prediction = np.array([[0.0, 5.0], [2.0, 5.0], [4.0, 5.0]])
+    positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    value, reason = spatial_map_correlation(
+        prediction,
+        positions,
+        prediction.copy(),
+        positions.copy(),
+        np.array([0]),
+    )
+    assert value == 1.0
+    assert reason == ""
+
+
 if __name__ == "__main__":
     test_correct_delta_beats_reversed_delta()
     test_de_metrics_report_opposite_direction()
     test_de_selection_uses_absolute_reference_delta()
     test_undefined_correlation_is_nan_with_reason()
     test_distribution_metrics_distinguish_heldout_and_fullpool()
+    test_niche_stratified_energy_distance_respects_strata()
+    test_niche_wise_delta_correlation_uses_matched_niches()
+    test_spatial_map_correlation_uses_reference_selected_genes()
     print("ok")

@@ -1,8 +1,9 @@
 {
   "claim_scope": "observed perturbation relocation with held-out target evaluation",
-  "generated_at": "2026-07-11T03:36:22.550949+00:00",
-  "git_commit": "0312979b64ab071fbb65ffcd5144890a067ba81a",
-  "include_expensive": false,
+  "generated_at": "2026-07-11T08:53:15.132378+00:00",
+  "git_commit": "cd3e2d3b94b36a13267c358b5101f2a132c9ef21",
+  "git_dirty": true,
+  "include_expensive": true,
   "metric_registry": {
     "boundary_leakage_score": {
       "causal_proof": "no",
@@ -58,10 +59,28 @@
       "scope": "distribution",
       "version": "v2.0"
     },
+    "niche_stratified_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "niche_distribution",
+      "version": "v2.0"
+    },
+    "niche_wise_delta_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "niche_group_effect",
+      "version": "v2.0"
+    },
     "source_individuality_score": {
       "causal_proof": "no",
       "direction": "higher",
       "scope": "structure_proxy",
+      "version": "v2.0"
+    },
+    "spatial_map_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "registered_spatial_proxy",
       "version": "v2.0"
     }
   },
@@ -71,6 +90,7 @@
     0.5,
     0.7
   ],
+  "spatialprop_source": "repro_runs/2026-07-11-nicheflow-v2/results/spatialprop_reference_only",
   "split_seeds": [
     20260711,
     20260712,

@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 import sys
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -22,6 +24,11 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "default.json")
     parser.add_argument("--output", type=Path, default=ROOT / "results" / "residual_gating")
     parser.add_argument("--limit-tasks", type=int)
+    parser.add_argument(
+        "--baseline-metrics",
+        type=Path,
+        default=ROOT / "results" / "existing_method_reassessment" / "metrics.csv",
+    )
     args = parser.parse_args()
     settings = json.loads(args.config.read_text())
     cfg = replace(
@@ -37,7 +44,14 @@ def main() -> None:
     manifest = load_manifest(cfg=cfg)
     if args.limit_tasks is not None:
         manifest = manifest.head(args.limit_tasks)
-    result = run_residual_gating(manifest=manifest, output_dir=args.output, config=cfg)
+    baseline_metrics = pd.read_csv(args.baseline_metrics)
+    result = run_residual_gating(
+        manifest=manifest,
+        output_dir=args.output,
+        config=cfg,
+        baseline_metrics=baseline_metrics,
+        candidate_method="fixed_80_20",
+    )
     print(f"wrote {len(result.metrics)} metric rows and {len(result.coverage)} coverage rows")
 
 

@@ -157,6 +157,100 @@ def de_direction_metrics(
     }
 
 
+def _binary_niche_labels(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float64).ravel()
+    if not np.isfinite(values).all():
+        raise ValueError("niche values contain non-finite values")
+    return (values >= 0.5).astype(np.int8)
+
+
+def niche_stratified_energy_distance(
+    prediction: np.ndarray,
+    prediction_niche: np.ndarray,
+    evaluation_target: np.ndarray,
+    target_niche: np.ndarray,
+) -> tuple[float, int, str]:
+    """Target-count-weighted held-out E-distance over shared binary niche strata."""
+    prediction = _as_2d(prediction, "prediction")
+    evaluation_target = _as_2d(evaluation_target, "evaluation_target")
+    pred_labels = _binary_niche_labels(prediction_niche)
+    target_labels = _binary_niche_labels(target_niche)
+    if prediction.shape[0] != pred_labels.size or evaluation_target.shape[0] != target_labels.size:
+        raise ValueError("niche labels must align with expression rows")
+    values: list[float] = []
+    weights: list[int] = []
+    for label in (0, 1):
+        pred_mask = pred_labels == label
+        target_mask = target_labels == label
+        if pred_mask.any() and target_mask.any():
+            values.append(energy_distance(prediction[pred_mask], evaluation_target[target_mask]))
+            weights.append(int(target_mask.sum()))
+    if not values:
+        return float("nan"), 0, "no_shared_niche_strata"
+    return float(np.average(values, weights=weights)), len(values), ""
+
+
+def niche_wise_delta_correlation(
+    prediction: np.ndarray,
+    source: np.ndarray,
+    source_niche: np.ndarray,
+    evaluation_target: np.ndarray,
+    target_niche: np.ndarray,
+) -> tuple[float, int, str]:
+    """Mean gene-wise delta PCC across shared binary niche strata."""
+    prediction = _as_2d(prediction, "prediction")
+    source = _as_2d(source, "source")
+    evaluation_target = _as_2d(evaluation_target, "evaluation_target")
+    source_labels = _binary_niche_labels(source_niche)
+    target_labels = _binary_niche_labels(target_niche)
+    if prediction.shape != source.shape or source.shape[0] != source_labels.size:
+        raise ValueError("prediction, source, and source_niche must align")
+    if evaluation_target.shape[0] != target_labels.size:
+        raise ValueError("evaluation target and target_niche must align")
+    values: list[float] = []
+    for label in (0, 1):
+        source_mask = source_labels == label
+        target_mask = target_labels == label
+        if not source_mask.any() or not target_mask.any():
+            continue
+        predicted_delta = prediction[source_mask].mean(axis=0) - source[source_mask].mean(axis=0)
+        true_delta = evaluation_target[target_mask].mean(axis=0) - source[source_mask].mean(axis=0)
+        value, _ = safe_correlation(predicted_delta, true_delta, method="pearson")
+        if np.isfinite(value):
+            values.append(value)
+    if not values:
+        return float("nan"), 0, "no_defined_shared_niche_strata"
+    return float(np.mean(values)), len(values), ""
+
+
+def spatial_map_correlation(
+    prediction: np.ndarray,
+    prediction_pos: np.ndarray,
+    evaluation_target: np.ndarray,
+    target_pos: np.ndarray,
+    selected_genes: np.ndarray,
+) -> tuple[float, str]:
+    """Nearest-map correlation on reference-selected genes in registered coordinates."""
+    prediction = _as_2d(prediction, "prediction")
+    evaluation_target = _as_2d(evaluation_target, "evaluation_target")
+    prediction_pos = _as_2d(prediction_pos, "prediction_pos")
+    target_pos = _as_2d(target_pos, "target_pos")
+    genes = np.asarray(selected_genes, dtype=int).ravel()
+    if prediction.shape[0] != prediction_pos.shape[0] or evaluation_target.shape[0] != target_pos.shape[0]:
+        raise ValueError("expression and position rows must align")
+    if prediction_pos.shape[1] != target_pos.shape[1]:
+        raise ValueError("prediction and target positions must share dimensions")
+    if genes.size == 0:
+        return float("nan"), "no_selected_genes"
+    distances = np.sqrt(
+        ((prediction_pos[:, None, :] - target_pos[None, :, :]) ** 2).sum(axis=2)
+    )
+    nearest = np.argmin(distances, axis=1)
+    observed_map = evaluation_target[nearest][:, genes]
+    predicted_map = prediction[:, genes]
+    return safe_correlation(predicted_map.ravel(), observed_map.ravel(), method="pearson")
+
+
 def distribution_metrics(
     prediction: np.ndarray,
     evaluation_target: np.ndarray,
@@ -231,6 +325,9 @@ def cross_niche_drop(
 METRIC_REGISTRY: dict[str, dict[str, str]] = {
     "heldout_edistance": {"version": "v2.0", "direction": "lower", "scope": "distribution", "causal_proof": "no"},
     "fullpool_edistance": {"version": "v2.0", "direction": "lower", "scope": "compatibility", "causal_proof": "no"},
+    "niche_stratified_edistance": {"version": "v2.0", "direction": "lower", "scope": "niche_distribution", "causal_proof": "no"},
+    "niche_wise_delta_pcc": {"version": "v2.0", "direction": "higher", "scope": "niche_group_effect", "causal_proof": "no"},
+    "spatial_map_pcc": {"version": "v2.0", "direction": "higher", "scope": "registered_spatial_proxy", "causal_proof": "no"},
     "delta_mae": {"version": "v2.0", "direction": "lower", "scope": "group_effect", "causal_proof": "no"},
     "delta_rmse": {"version": "v2.0", "direction": "lower", "scope": "group_effect", "causal_proof": "no"},
     "delta_pcc": {"version": "v2.0", "direction": "higher", "scope": "group_effect", "causal_proof": "no"},

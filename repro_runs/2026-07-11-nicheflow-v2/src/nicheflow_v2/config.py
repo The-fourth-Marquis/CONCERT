@@ -18,6 +18,10 @@ class ExperimentConfig:
     min_reference: int = 5
     min_evaluation: int = 5
     bootstrap_resamples: int = 10_000
+    spatialprop_k: int = 8
+    spatialprop_hidden_dim: int = 64
+    spatialprop_latent_dim: int = 32
+    spatialprop_epochs: int = 80
 
     @classmethod
     def default(cls) -> "ExperimentConfig":

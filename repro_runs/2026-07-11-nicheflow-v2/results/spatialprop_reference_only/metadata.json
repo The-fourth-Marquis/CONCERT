@@ -1,0 +1,106 @@
+{
+  "claim_scope": "observed perturbation relocation with held-out target evaluation",
+  "generated_at": "2026-07-11T08:53:16.222310+00:00",
+  "git_commit": "cd3e2d3b94b36a13267c358b5101f2a132c9ef21",
+  "git_dirty": true,
+  "include_expensive": true,
+  "metric_registry": {
+    "boundary_leakage_score": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "spatial_proxy",
+      "version": "v2.0"
+    },
+    "delta_mae": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_r2": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_rmse": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "delta_spearman": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "group_effect",
+      "version": "v2.0"
+    },
+    "distance_response_decay_score": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "spatial_proxy",
+      "version": "v2.0"
+    },
+    "fullpool_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "compatibility",
+      "version": "v2.0"
+    },
+    "heldout_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "distribution",
+      "version": "v2.0"
+    },
+    "niche_stratified_edistance": {
+      "causal_proof": "no",
+      "direction": "lower",
+      "scope": "niche_distribution",
+      "version": "v2.0"
+    },
+    "niche_wise_delta_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "niche_group_effect",
+      "version": "v2.0"
+    },
+    "source_individuality_score": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "structure_proxy",
+      "version": "v2.0"
+    },
+    "spatial_map_pcc": {
+      "causal_proof": "no",
+      "direction": "higher",
+      "scope": "registered_spatial_proxy",
+      "version": "v2.0"
+    }
+  },
+  "n_tasks_requested": 37,
+  "only_expensive": true,
+  "reference_fractions": [
+    0.25,
+    0.5,
+    0.7
+  ],
+  "resume_cache": true,
+  "split_seeds": [
+    20260711,
+    20260712,
+    20260713,
+    20260714,
+    20260715
+  ],
+  "split_types": [
+    "random_stratified",
+    "spatial_block"
+  ]
+}

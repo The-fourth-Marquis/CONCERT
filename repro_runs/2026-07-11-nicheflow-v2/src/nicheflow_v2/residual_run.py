@@ -13,13 +13,18 @@ from .artifacts import write_artifacts
 from .config import ExperimentConfig
 from .data import TaskPayload, load_task_payload
 from .methods import V2_METHODS, V2PredictionResult, predict_method
+from .report import evaluate_success_gates
 from .metrics import (
     boundary_leakage_score,
     de_direction_metrics,
     distance_response_decay_score,
     distribution_metrics,
+    niche_stratified_energy_distance,
+    niche_wise_delta_correlation,
     perturbation_effect_metrics,
+    select_de_indices,
     source_individuality_score,
+    spatial_map_correlation,
 )
 from .splits import TargetSplit, split_target_pool
 
@@ -76,12 +81,42 @@ def _metric_row(
     }
     row.update(result.components)
     row.update(distribution_metrics(result.prediction, evaluation_target, payload.target_expr))
+    niche_edistance, niche_count, niche_reason = niche_stratified_energy_distance(
+        result.prediction,
+        payload.query_niche,
+        evaluation_target,
+        payload.target_niche[split.evaluation_indices],
+    )
+    row["niche_stratified_edistance"] = niche_edistance
+    row["niche_stratified_n_strata"] = niche_count
+    row["niche_stratified_reason"] = niche_reason
     row.update(perturbation_effect_metrics(result.prediction, payload.query_expr, evaluation_target))
+    niche_delta, niche_delta_count, niche_delta_reason = niche_wise_delta_correlation(
+        result.prediction,
+        payload.query_expr,
+        payload.query_niche,
+        evaluation_target,
+        payload.target_niche[split.evaluation_indices],
+    )
+    row["niche_wise_delta_pcc"] = niche_delta
+    row["niche_wise_delta_n_strata"] = niche_delta_count
+    row["niche_wise_delta_reason"] = niche_delta_reason
     predicted_delta = result.prediction.mean(axis=0) - payload.query_expr.mean(axis=0)
     true_delta = evaluation_target.mean(axis=0) - payload.query_expr.mean(axis=0)
     reference_delta = reference_target.mean(axis=0) - payload.query_expr.mean(axis=0)
     row.update(de_direction_metrics(predicted_delta, true_delta, reference_delta, top_k=20))
     row.update(de_direction_metrics(predicted_delta, true_delta, reference_delta, top_k=50))
+    if payload.is_cross_slide:
+        row["spatial_map_pcc"] = float("nan")
+        row["spatial_map_pcc_reason"] = "unregistered_cross_slide"
+    else:
+        row["spatial_map_pcc"], row["spatial_map_pcc_reason"] = spatial_map_correlation(
+            result.prediction,
+            payload.query_pos,
+            evaluation_target,
+            payload.target_pos[split.evaluation_indices],
+            select_de_indices(reference_delta, top_k=20),
+        )
     target_reference, labels = _target_reference(payload, split)
     row["boundary_leakage_score"] = boundary_leakage_score(result.prediction, target_reference, labels)
     individuality, individuality_reason = source_individuality_score(result.prediction, payload.query_expr)
@@ -146,6 +181,8 @@ def run_residual_gating(
     manifest: pd.DataFrame,
     output_dir: Path,
     config: ExperimentConfig,
+    baseline_metrics: pd.DataFrame | None = None,
+    candidate_method: str = "fixed_80_20",
 ) -> ResidualRunResult:
     metric_rows: list[dict[str, Any]] = []
     coverage_rows: list[dict[str, Any]] = []
@@ -217,7 +254,16 @@ def run_residual_gating(
     metrics = pd.DataFrame(metric_rows)
     coverage = pd.DataFrame(coverage_rows)
     split_manifest = pd.DataFrame(split_rows)
-    gate_summary = _gate_summary(metrics)
+    gate_summary = (
+        evaluate_success_gates(
+            metrics,
+            baseline_metrics,
+            candidate_method=candidate_method,
+            config=config,
+        )
+        if baseline_metrics is not None
+        else _gate_summary(metrics)
+    )
     outputs = write_artifacts(
         metrics,
         coverage,

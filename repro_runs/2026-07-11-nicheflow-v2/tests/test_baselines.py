@@ -32,6 +32,7 @@ def test_baselines_ignore_evaluation_expression() -> None:
         "target_mean_l1",
         "knn10_l1",
         "cauchy_l1",
+        "adaptive_anchor_calibrated_l2",
         "legacy_nicheflow_lite_l3",
         "legacy_v1_fixed_80_20_l3",
     )
@@ -67,8 +68,17 @@ def test_source_identity_is_l0_and_target_free() -> None:
     assert result.calibration is False
 
 
+def test_l2_calibrated_anchor_is_explicitly_registered() -> None:
+    payload, split = _case()
+    result = predict_existing_method("adaptive_anchor_calibrated_l2", payload, split)
+    assert result.access_level == "L2"
+    assert result.calibration is True
+    assert result.uses_target_reference is True
+
+
 if __name__ == "__main__":
     test_baselines_ignore_evaluation_expression()
     test_reference_only_calibration_uses_no_evaluation_rows()
     test_source_identity_is_l0_and_target_free()
+    test_l2_calibrated_anchor_is_explicitly_registered()
     print("ok")

@@ -5,5 +5,9 @@
   "split_types": ["random_stratified", "spatial_block"],
   "min_reference": 5,
   "min_evaluation": 5,
-  "bootstrap_resamples": 10000
+  "bootstrap_resamples": 10000,
+  "spatialprop_k": 8,
+  "spatialprop_hidden_dim": 64,
+  "spatialprop_latent_dim": 32,
+  "spatialprop_epochs": 80
 }
