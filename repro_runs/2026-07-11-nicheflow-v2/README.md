@@ -7,6 +7,7 @@ Scientific scope: Mainline A observed-perturbation spatial relocation with repor
 ## Main artifacts
 
 - Final report: reports/NicheFlow_v2_report.md
+- Detailed Chinese progress guide: `reports/NicheFlow_v2_当前项目进展中文说明.md`
 - Existing-method reassessment: results/existing_method_reassessment/
 - Residual/gating evidence and G1-G7: results/residual_gating/
 - Interim reassessment report: reports/existing_method_reassessment.md
