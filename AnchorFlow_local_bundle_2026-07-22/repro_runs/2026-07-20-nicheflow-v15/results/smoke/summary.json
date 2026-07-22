@@ -1,0 +1,19 @@
+{
+  "access_level": "L3",
+  "calibration": false,
+  "delta_vs_fixed_80_20": 0.434131478070924,
+  "fixed_80_20_heldout_edistance": 52.93039858165726,
+  "heldout_edistance": 53.36453005972818,
+  "hidden_dim": 16,
+  "latent_dim": 8,
+  "leakage_mutation_check": true,
+  "method": "nonlinear_monge_map",
+  "n_evaluation": 6,
+  "n_query": 31,
+  "n_reference": 15,
+  "reference_fraction": 0.7,
+  "split_seed": 20260711,
+  "split_type": "random_stratified",
+  "task_id": "GSM5808054_patchclose_tumor_Jak2",
+  "uses_evaluation_target": false
+}

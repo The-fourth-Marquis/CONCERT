@@ -1,0 +1,39 @@
+{
+  "claim_boundary": "observed-perturbation reference-conditioned expression distribution generation",
+  "runtime": {
+    "python_executable": "/root/code/nicheformer/.venv/bin/python",
+    "required_cuda_arch": "sm_120"
+  },
+  "physical_gpu": 2,
+  "cuda_visible_devices": "2",
+  "cuda_memory_fraction": 0.1,
+  "tasks": [
+    {
+      "index": 13,
+      "task_id": "GSM5808055_border_surrogate_KP_to_Tgfbr2"
+    },
+    {
+      "index": 16,
+      "task_id": "GSM5808055_cross_slide_surrogate_KP_to_Jak2_to_GSM5808054"
+    }
+  ],
+  "split_types": [
+    "random_stratified",
+    "spatial_block"
+  ],
+  "settings": {
+    "reference_fraction": 0.7,
+    "seed": 20260711,
+    "latent_dim": 8,
+    "hidden_dim": 32,
+    "epochs": 60,
+    "integration_steps": 16,
+    "integration_horizon": 0.25,
+    "anchor_temperature": 0.25,
+    "source_skip_weight": 0.2,
+    "distribution_weight": 0.25,
+    "identity_weight": 0.05,
+    "device": "cuda:0",
+    "precision": "float32"
+  }
+}

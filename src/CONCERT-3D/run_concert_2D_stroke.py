@@ -29,7 +29,7 @@ try:
 except Exception:  # pragma: no cover
     wandb = None
 
-from concert_batch_2D_stroke import CONCERT
+from concert_batch_2D_stroke import CONCERT3D as CONCERT
 from preprocess import normalize, geneSelection
 
 

@@ -2,3 +2,6 @@
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+/wandb
+/repro_runs
+/NicheFlow_old

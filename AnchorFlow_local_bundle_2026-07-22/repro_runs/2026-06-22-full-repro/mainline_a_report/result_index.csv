@@ -1,0 +1,19 @@
+artifact,kind,path,primary_question,include_in_paper
+Mainline A protocol,protocol,repro_runs/2026-06-22-full-repro/mainline_a_protocol.md,What is the frozen transductive relocation protocol?,yes
+Task manifest,manifest,repro_runs/2026-06-22-full-repro/task_manifest_mainline_a.csv,Which 37 tasks and 1053 genes define Mainline A?,yes
+A2.1 strong transductive baselines,results,repro_runs/2026-06-22-full-repro/mainline_a_transductive_baselines/best_by_task.csv,What is the strongest non-oracle transductive baseline per task?,yes
+A2.1 method ranking,results,repro_runs/2026-06-22-full-repro/mainline_a_transductive_baselines/method_ranking.csv,Which baseline methods dominate under observed target-pool access?,yes
+SpatialProp-style spot-GNN comparison,results,repro_runs/2026-06-22-full-repro/mainline_a_spatialprop_style_spot_gnn/compare_to_a2_best.csv,Does the SpatialProp-style spot-GNN beat the A2.1 winner?,yes
+Available CONCERT coverage,coverage,repro_runs/2026-06-22-full-repro/concert_available_comparison/coverage_summary.csv,How many Mainline A tasks are covered by available CONCERT outputs?,yes
+Available CONCERT comparison,results,repro_runs/2026-06-22-full-repro/concert_available_comparison/compare_to_stage3_stage4.csv,How do available CONCERT outputs compare on covered tasks?,yes
+A2.3 anchored NicheFlow comparison,results,repro_runs/2026-06-22-full-repro/nicheflow_anchored_baseline/compare_to_a2_best.csv,How strong is the anchored residual baseline versus A2.1?,yes
+A2.4 audit family summary,audit,repro_runs/2026-06-22-full-repro/nicheflow_anchored_audit/audit_family_summary.csv,Which component family explains A2.3 performance?,yes
+A2.4 gain decomposition,audit,repro_runs/2026-06-22-full-repro/nicheflow_anchored_audit/gain_decomposition.csv,Is the dominant gain from anchor residual or calibration per task?,yes
+NicheFlow-v1 ranking,results,repro_runs/2026-06-22-full-repro/nicheflow_v1/method_ranking.csv,Which NicheFlow-v1 variant wins each task?,yes
+NicheFlow-v1 comparison to A2.1,results,repro_runs/2026-06-22-full-repro/nicheflow_v1/compare_to_a2_best.csv,Does NicheFlow-v1 beat the strong transductive winner?,yes
+NicheFlow-v1 task-type summary,results,repro_runs/2026-06-22-full-repro/nicheflow_v1/task_type_summary.csv,Where is NicheFlow-v1 strongest across relocation settings?,yes
+Mechanism family summary,diagnostic,repro_runs/2026-06-22-full-repro/mainline_a_mechanism_metrics/model_family_summary.csv,Are E-distance gains accompanied by interpretable spatial behavior?,yes
+Mechanism task-type summary,diagnostic,repro_runs/2026-06-22-full-repro/mainline_a_mechanism_metrics/task_type_summary.csv,How do mechanism metrics vary by relocation setting?,yes
+NicheFlow-v1 compare figure,figure,repro_runs/2026-06-22-full-repro/nicheflow_v1/fig_compare_to_a2_best.png,Visual summary of NicheFlow-v1 delta versus A2.1,yes
+NicheFlow-v1 ablation figure,figure,repro_runs/2026-06-22-full-repro/nicheflow_v1/fig_variant_ablation_by_task_type.png,Visual summary of NicheFlow-v1 variant behavior by task type,yes
+Mechanism summary figure,figure,repro_runs/2026-06-22-full-repro/mainline_a_mechanism_metrics/fig_mechanism_family_summary.png,Visual summary of mechanism proxy metrics,yes

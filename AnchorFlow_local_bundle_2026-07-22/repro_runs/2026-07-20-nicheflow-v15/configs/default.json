@@ -1,0 +1,66 @@
+{
+  "master_seed": 20260720,
+  "reference_fractions": [
+    0.25,
+    0.5,
+    0.7
+  ],
+  "split_seeds": [
+    20260711,
+    20260712,
+    20260713,
+    20260714,
+    20260715
+  ],
+  "split_types": [
+    "random_stratified",
+    "spatial_block"
+  ],
+  "min_reference": 5,
+  "min_evaluation": 5,
+  "graph_k": 8,
+  "latent_dim": 32,
+  "hidden_dim": 64,
+  "sinkhorn_epsilon": 0.1,
+  "sinkhorn_iterations": 100,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0001,
+  "epochs": 80,
+  "flow_integration_steps": 16,
+  "flow_distribution_weight": 0.25,
+  "flow_identity_weight": 0.05,
+  "anchor_temperature": 0.25,
+  "anchor_source_skip_weight": 0.2,
+  "anchor_flow_integration_horizon": 0.25,
+  "structured_modulation_cap": 0.5,
+  "local_residual_integration_horizons": [
+    0.0,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "local_residual_modulation_cap": 0.5,
+  "anchor_guided_temperature": 0.25,
+  "anchor_guided_strength_grid": [
+    0.0,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.7,
+    0.72,
+    0.74,
+    0.75,
+    0.755,
+    0.76,
+    0.765,
+    0.77,
+    0.775,
+    0.78,
+    0.8,
+    1.0
+  ],
+  "anchor_guided_smoke_candidate": 0.77,
+  "anchor_guided_selection_fallback": 0.0
+}

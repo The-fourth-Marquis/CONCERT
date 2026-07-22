@@ -76,7 +76,7 @@ class EarlyStopping:
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-class CONCERT(nn.Module):
+class CONCERT(nn.Module):  
     """CONCERT — GP-VAE for spatial counterfactual perturbation modeling.
 
     Latent factorization:

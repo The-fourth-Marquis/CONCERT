@@ -132,7 +132,7 @@ tensorboard-data-server==0.7.2
 tensorstore==0.1.78
 threadpoolctl==3.6.0
 toolz==1.1.0
-torch==2.7.1+cu128
+# torch==2.7.1+cu128
 torchmetrics==1.8.2
 tornado==6.5.4
 tqdm==4.67.3

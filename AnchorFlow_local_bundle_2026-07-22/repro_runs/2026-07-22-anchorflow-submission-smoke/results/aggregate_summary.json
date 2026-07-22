@@ -1,0 +1,60 @@
+{
+  "all_metrics_finite": true,
+  "all_mutation_guards": true,
+  "by_split": {
+    "random_stratified": {
+      "mean_flow_minus_fixed": 65.15727254618143,
+      "mean_flow_minus_initial": -23.986963991659692
+    },
+    "spatial_block": {
+      "mean_flow_minus_fixed": 63.240498856212874,
+      "mean_flow_minus_initial": -17.83582905685764
+    }
+  },
+  "claim_boundary": "observed-perturbation reference-conditioned expression distribution generation",
+  "compute": {
+    "cuda_architectures": [
+      "sm_75",
+      "sm_80",
+      "sm_86",
+      "sm_90",
+      "sm_100",
+      "sm_120"
+    ],
+    "cuda_visible_devices": "2",
+    "device_name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    "memory_fraction": 0.1,
+    "mixed_precision": false,
+    "physical_gpu": 2,
+    "precision": "float32",
+    "process_device": "cuda:0",
+    "python_executable": "/opt/conda/bin/python3.11",
+    "required_cuda_arch": "sm_120",
+    "torch_cuda_version": "13.0",
+    "torch_version": "2.12.0+cu130"
+  },
+  "decision": "insufficient_confirmation_for_performance_claim",
+  "flow_wins_both_count": 2,
+  "gates": {
+    "all_metrics_finite": true,
+    "all_mutation_guards": true,
+    "at_least_three_joint_wins": false,
+    "both_split_strata_improve": false,
+    "mean_below_fixed": false,
+    "mean_below_initial": true
+  },
+  "mean_fixed_80_20_edistance": 68.50713555901831,
+  "mean_flow_edistance": 132.70602126021546,
+  "mean_flow_minus_fixed": 64.19888570119714,
+  "mean_flow_minus_initial": -20.911396524258667,
+  "mean_initial_edistance": 153.6174177844741,
+  "n_views": 4,
+  "split_types": [
+    "random_stratified",
+    "spatial_block"
+  ],
+  "task_ids": [
+    "GSM5808055_border_surrogate_KP_to_Tgfbr2",
+    "GSM5808055_cross_slide_surrogate_KP_to_Jak2_to_GSM5808054"
+  ]
+}

@@ -8,41 +8,105 @@ Time budget: three hours
 
 Submit a scientifically defensible title and abstract immediately, then use the
 remaining time for one frozen, leakage-safe confirmation experiment. The paper
-is about few-shot, reference-conditioned gene-expression distribution
-generation for observed spatial perturbations. It is not about individual
-causal counterfactuals, strict unseen perturbations, or perturbation spatial
+formalizes few-shot spatial perturbation relocation for an observed target
+perturbation, establishes an access-matched evaluation framework that exposes
+target-state localization as a key bottleneck, and introduces a
+reference-anchored residual flow for gene-expression distribution generation
+across spatial contexts. It is not about individual causal counterfactuals,
+strict unseen perturbations, physical movement, or perturbation spatial
 distribution completion.
 
 ## Provisional Title
 
-Reference-Anchored Residual Flows for Few-Shot Spatial Perturbation Expression
-Generation
+Few-Shot Spatial Perturbation Relocation via Reference-Anchored Residual Flows
 
 ## Provisional Abstract
 
-Spatial perturbation transcriptomics profiles cellular responses in native
-tissue contexts, but observations of a target perturbation are often sparse,
-making response generation challenging. Existing end-to-end predictors must
-simultaneously infer the target-state location and model context-dependent
-distributional variation, an ill-conditioned objective in few-shot settings.
-We formulate observed-perturbation prediction as reference-conditioned
-gene-expression distribution generation rather than individual causal
-counterfactual prediction. We introduce a reference-anchored conditional
-residual flow that first constructs a context-aware expression anchor from the
-reported target-reference pool and then learns a low-dimensional conditional
-velocity field to refine the anchor toward the target distribution. This
-decomposition separates statistically stable target localization from flexible
-nonlinear distribution refinement, while retaining the anchor-only model as an
-exact zero-horizon fallback. Training and model construction use only
-target-reference observations, with evaluation expressions excluded from
-representation learning, coupling, and inference. We evaluate the method under
-random-stratified and spatial-block reference/evaluation splits using
-E-distance as the primary endpoint and compare against anchor-only,
-fixed-mixture, linear-residual, spatial-smoothing, and end-to-end flow
-baselines. Preliminary experiments indicate that anchor initialization resolves
-the target-location failure of direct conditional flows and that learned
-residual dynamics can further reduce held-out distribution discrepancy beyond
-anchor-only prediction.
+Spatial perturbation experiments often observe a perturbation in only a sparse
+and spatially biased subset of tissue, leaving its response distribution unknown
+in other regions, niches, or slides. We formalize this setting as observed
+perturbation relocation: given a small target-reference pool and a requested
+spatial context, the goal is to generate the corresponding gene-expression
+distribution without claiming individual causal counterfactuals. We first
+establish an access-matched evaluation framework and show that simple spatial
+and target-reference baselines can outperform available end-to-end
+counterfactual predictors, revealing target-state localization as a major
+bottleneck in few-shot prediction. Motivated by this finding, we introduce a
+reference-anchored conditional residual flow. The method first constructs a
+context-aware expression anchor from the observed target-reference pool and
+then learns a low-dimensional conditional velocity field that refines the
+anchor toward the held-out target distribution. This decomposition separates
+statistically stable localization from flexible nonlinear distribution
+refinement and retains the anchor-only solution as an exact zero-horizon
+fallback. Training uses source/control context and target-reference
+observations, while target-evaluation expressions are excluded from
+representation learning, coupling, selection, and inference. We evaluate the
+method under same-slide, random-stratified, spatial-block, and cross-slide
+relocation using E-distance as the primary endpoint and compare against strong
+access-matched spatial baselines, anchor-only prediction, fixed mixtures, and
+direct conditional flows. Preliminary results indicate that anchor
+initialization resolves the localization failure of direct conditional flows
+and that learned residual dynamics can improve held-out distribution matching
+beyond anchor-only prediction.
+
+## TLDR
+
+We formalize few-shot spatial perturbation relocation, reveal target-state
+localization as a key bottleneck through access-matched baselines, and introduce
+reference-anchored residual flows for gene-expression distribution generation.
+
+The TLDR is 234 characters including spaces and punctuation, below the
+250-character submission limit.
+
+## Contribution Structure
+
+The paper has three linked contributions:
+
+1. **Task:** formalize observed spatial perturbation relocation under sparse,
+   explicitly reported target-reference access.
+2. **Evaluation:** establish access-matched baselines and leakage-safe
+   reference/evaluation splits that distinguish target-state localization from
+   unsupported individual causal counterfactual claims.
+3. **Method:** introduce a reference-anchored conditional residual flow that
+   separates statistically stable localization from nonlinear distribution
+   refinement.
+
+## Relocation Task and Application Support
+
+Observed perturbation relocation takes a small observed target-perturbation
+reference pool and a requested source spot set or spatial context, then
+generates the target-perturbation gene-expression distribution for that
+requested context.
+
+The task supports practical settings in which perturbation coverage is sparse
+or spatially biased, a target perturbation is missing from a region or niche,
+or an observed target state must be transferred across regions or slides. The
+outputs can support response completion and prioritization of regions for
+follow-up experiments. Relocation means computational transfer of an observed
+perturbation state across spatial contexts; it does not mean physical movement
+or identification of per-spot causal potential outcomes.
+
+## Baseline Audit as Method Motivation
+
+The baseline contribution is an evaluation and diagnosis framework, not a new
+prediction algorithm. Frozen evidence motivates the proposed decomposition:
+
+- target-state holdout: the filtered CONCERT retrain has E-distance 332.12,
+  while the strongest simple baseline has E-distance 43.42;
+- spatial-block holdout: the filtered CONCERT retrain has E-distance 111.68,
+  while the strongest simple baseline has E-distance 51.56;
+- available CONCERT outputs cover 11 of 37 frozen Mainline A tasks and beat the
+  strong access-matched winner on 0 of those 11 tasks.
+
+These protocol-specific results must not be summarized as a universal CONCERT
+E-distance of approximately 300. They support the narrower conclusion that
+target-state localization and reference access explain substantial apparent
+counterfactual-prediction signal. The diagnostic chain is:
+
+    strong access-matched baseline audit
+    -> target-state localization bottleneck
+    -> reference anchor for stable localization
+    -> conditional residual flow for nonlinear refinement
 
 ## Method Story
 
@@ -63,7 +127,8 @@ contract.
 The allowed claim is:
 
 ```text
-observed-perturbation, reference-conditioned expression distribution generation
+few-shot observed spatial perturbation relocation with explicitly reported
+target-reference access
 ```
 
 The disallowed claims are per-source-spot causal counterfactual correctness,
@@ -179,7 +244,8 @@ Artifacts:
 
 ## Three-Hour Order of Work
 
-1. Use the provisional title and abstract for registration immediately.
+1. Use the revised relocation title, abstract, and TLDR for registration
+   immediately.
 2. Add the isolated wrapper and minimal contract tests.
 3. Run the four frozen views sequentially on physical GPU 2 without parallel
    result-dependent changes.

@@ -1,0 +1,14 @@
+{
+  "all_boundary_gates": false,
+  "all_delta_gates": false,
+  "all_distribution_wins": false,
+  "all_individuality_gates": false,
+  "all_units_ok": true,
+  "mean_boundary_relative_vs_fixed": 0.061252876949559144,
+  "mean_delta_pcc_diff_vs_fixed": 0.0017646772718333075,
+  "mean_delta_vs_fixed": 12.943354943202161,
+  "mean_individuality_diff_vs_fixed": -0.6388266463810833,
+  "n_ok": 12,
+  "n_tasks": 6,
+  "n_units": 12
+}

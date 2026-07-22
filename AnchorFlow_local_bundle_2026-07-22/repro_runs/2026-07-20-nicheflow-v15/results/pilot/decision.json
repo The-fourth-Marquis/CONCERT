@@ -1,0 +1,11 @@
+{
+  "all_leakage_checks_pass": true,
+  "decision": "advance_to_multiseed",
+  "interpretation": "Pilot evidence only; promotion still requires the complete 37-task, five-seed held-out gates.",
+  "mean_delta_vs_fixed": -1.2926591201612894,
+  "n_tasks": 6,
+  "n_units": 36,
+  "selected_config": "context_l16",
+  "spatial_block_mean_delta": -0.34593257164032803,
+  "win_rate": 0.6666666666666666
+}

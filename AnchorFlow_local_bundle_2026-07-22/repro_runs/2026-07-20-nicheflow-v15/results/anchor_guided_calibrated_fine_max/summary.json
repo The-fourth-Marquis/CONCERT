@@ -1,0 +1,140 @@
+{
+  "actual": {
+    "boundary_leakage": 0.5118561631248932,
+    "delta_mae": 0.396415257790594,
+    "delta_pcc": 0.99047199178,
+    "diff_vs_fixed_boundary_leakage": 0.018441069394907195,
+    "diff_vs_fixed_delta_mae": -0.05516703875445744,
+    "diff_vs_fixed_delta_pcc": 0.005898217928000049,
+    "diff_vs_fixed_heldout_edistance": -21.097660516428107,
+    "diff_vs_fixed_niche_stratified_edistance": -21.097660516428114,
+    "diff_vs_fixed_source_individuality": -0.017045479047000045,
+    "fixed_80_20_boundary_leakage": 0.49341509372998604,
+    "fixed_80_20_delta_mae": 0.45158229654505144,
+    "fixed_80_20_delta_pcc": 0.984573773852,
+    "fixed_80_20_heldout_edistance": 52.93039858165726,
+    "fixed_80_20_niche_stratified_edistance": 52.930398581657265,
+    "fixed_80_20_source_individuality": 0.999950919602,
+    "heldout_edistance": 31.83273806522915,
+    "leakage_mutation_check": true,
+    "method": "anchor_guided_calibrated",
+    "n_evaluation": 6,
+    "n_query": 31,
+    "n_reference": 15,
+    "niche_stratified_edistance": 31.83273806522915,
+    "pairwise_geometry_error": 0.733819623803971,
+    "reference_fraction": 0.7,
+    "selected_strength": 0.76,
+    "source_individuality": 0.982905440555,
+    "split_seed": 20260711,
+    "split_type": "random_stratified",
+    "task_id": "GSM5808054_patchclose_tumor_Jak2",
+    "uses_evaluation_target": false
+  },
+  "pseudo_calibration_rows": [
+    {
+      "boundary_leakage": 0.8300372590112054,
+      "delta_pcc": 0.963989576366,
+      "heldout_edistance": 65.0632495228755,
+      "modulation_strength": 0.7,
+      "source_individuality": 0.989750546595
+    },
+    {
+      "boundary_leakage": 0.8185216007535328,
+      "delta_pcc": 0.963331284046,
+      "heldout_edistance": 65.31653270670002,
+      "modulation_strength": 0.72,
+      "source_individuality": 0.987396264499
+    },
+    {
+      "boundary_leakage": 0.8073434141745418,
+      "delta_pcc": 0.962652200193,
+      "heldout_edistance": 65.7101497258811,
+      "modulation_strength": 0.74,
+      "source_individuality": 0.984366534402
+    },
+    {
+      "boundary_leakage": 0.801873654082896,
+      "delta_pcc": 0.962305542304,
+      "heldout_edistance": 65.96272071098669,
+      "modulation_strength": 0.75,
+      "source_individuality": 0.982524730175
+    },
+    {
+      "boundary_leakage": 0.7991922927338384,
+      "delta_pcc": 0.962130548643,
+      "heldout_edistance": 66.10354193036802,
+      "modulation_strength": 0.755,
+      "source_individuality": 0.981505577477
+    },
+    {
+      "boundary_leakage": 0.7965348393008385,
+      "delta_pcc": 0.961954485698,
+      "heldout_edistance": 66.25429731742246,
+      "modulation_strength": 0.76,
+      "source_individuality": 0.980413355281
+    },
+    {
+      "boundary_leakage": 0.7939112236281437,
+      "delta_pcc": 0.961777383905,
+      "heldout_edistance": 66.41517491064174,
+      "modulation_strength": 0.765,
+      "source_individuality": 0.979241634501
+    },
+    {
+      "boundary_leakage": 0.7913129830036736,
+      "delta_pcc": 0.961599273034,
+      "heldout_edistance": 66.58637143475882,
+      "modulation_strength": 0.77,
+      "source_individuality": 0.97798334433
+    },
+    {
+      "boundary_leakage": 0.7887350076807855,
+      "delta_pcc": 0.961420183863,
+      "heldout_edistance": 66.76808551176508,
+      "modulation_strength": 0.775,
+      "source_individuality": 0.97663065976
+    },
+    {
+      "boundary_leakage": 0.7861773885135894,
+      "delta_pcc": 0.961240142037,
+      "heldout_edistance": 66.96053075698678,
+      "modulation_strength": 0.78,
+      "source_individuality": 0.975174916934
+    },
+    {
+      "boundary_leakage": 0.7761443328883559,
+      "delta_pcc": 0.960511019423,
+      "heldout_edistance": 67.84203918329798,
+      "modulation_strength": 0.8,
+      "source_individuality": 0.968112719752
+    }
+  ],
+  "pseudo_fixed_80_20": {
+    "boundary_leakage": 0.7793755992307807,
+    "delta_pcc": 0.957431364298,
+    "heldout_edistance": 87.46838748609012,
+    "source_individuality": 0.999892087568
+  },
+  "pseudo_reference_fraction": 0.7,
+  "pseudo_split_seed": 20261711,
+  "pseudo_split_type": "random_stratified",
+  "reference_fraction": 0.7,
+  "selected_strength": 0.76,
+  "split_seed": 20260711,
+  "split_type": "random_stratified",
+  "strengths": [
+    0.7,
+    0.72,
+    0.74,
+    0.75,
+    0.755,
+    0.76,
+    0.765,
+    0.77,
+    0.775,
+    0.78,
+    0.8
+  ],
+  "task_id": "GSM5808054_patchclose_tumor_Jak2"
+}

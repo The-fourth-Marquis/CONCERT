@@ -1,0 +1,16 @@
+{
+  "all_leakage_checks_pass": true,
+  "boundary_gate_pass": false,
+  "decision": "do_not_scale_current_monge",
+  "delta_pcc_gate_pass": false,
+  "distribution_gate_pass": false,
+  "individuality_gate_pass": true,
+  "interpretation": "Pilot evidence only; promotion still requires the complete 37-task, five-seed held-out gates.",
+  "mean_delta_vs_fixed": 13.368250257987633,
+  "mechanism_gate_pass": false,
+  "n_tasks": 6,
+  "n_units": 36,
+  "selected_config": "modulation_025_l16",
+  "spatial_block_mean_delta": 13.286429502559988,
+  "win_rate": 0.25
+}
