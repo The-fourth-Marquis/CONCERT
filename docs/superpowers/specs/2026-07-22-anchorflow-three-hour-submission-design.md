@@ -102,9 +102,20 @@ Frozen settings:
 | source skip weight | 0.20 |
 | distribution weight | 0.25 |
 | identity weight | 0.05 |
+| flow compute device | physical GPU 2 |
+| process-visible CUDA device | `CUDA_VISIBLE_DEVICES=2` |
+| PyTorch device inside process | `cuda:0` |
+| precision | FP32, no mixed precision |
 
 The horizon is fixed before reading these results. There is no grid search,
 per-task tuning, alternate seed, or rescue run in the three-hour experiment.
+
+The four views run sequentially on physical GPU 2 so that the experiment can
+share the machine without launching competing jobs. NumPy preprocessing,
+low-rank basis construction, context anchors, and Sinkhorn coupling remain on
+CPU; the velocity network training and Euler integration run on CUDA. CPU and
+CUDA RNGs are seeded from the frozen seed. The run records the physical GPU,
+visible device mapping, GPU name, PyTorch version, CUDA version, and precision.
 
 Every run reports three aligned predictions:
 
@@ -153,6 +164,7 @@ Minimum contract checks before the real runs:
 - the two frozen manifest indices resolve to the expected task IDs;
 - the four task/split views are unique;
 - all settings equal the frozen table above;
+- CUDA is available and the process sees exactly the intended physical GPU 2;
 - the output directory does not already contain result artifacts;
 - summary aggregation uses only E-distance for the decision;
 - the existing evaluation-expression mutation guard remains enabled.
@@ -169,7 +181,8 @@ Artifacts:
 
 1. Use the provisional title and abstract for registration immediately.
 2. Add the isolated wrapper and minimal contract tests.
-3. Run the four frozen views without parallel result-dependent changes.
+3. Run the four frozen views sequentially on physical GPU 2 without parallel
+   result-dependent changes.
 4. Verify artifacts and aggregate the E-distance decision.
 5. Update the abstract only if the frozen confirmation succeeds; otherwise keep
    the provisional abstract unchanged.
